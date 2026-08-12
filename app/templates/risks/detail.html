@@ -1,0 +1,376 @@
+{% extends "base.html" %}
+{% block title %}{{ risk.risk_id }} — Skerry{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('risks.list_risks') }}" class="text-muted text-decoration-none">The Chart</a>
+  &rsaquo; {{ risk.risk_id }}
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-3">
+  <div>
+    <h5 class="mb-0 fw-bold">{{ risk.risk_id }}
+      <span class="badge badge-rag-{{ risk.rag_status }} ms-2">{{ risk.rag_status }}</span>
+      {% if risk.board_reporting_flag %}
+        <span class="badge bg-primary ms-1"><i class="bi bi-flag-fill"></i> Board</span>
+      {% endif %}
+      {% if risk.exceeds_risk_appetite %}
+        <span class="badge bg-warning text-dark ms-1">Exceeds Appetite</span>
+      {% endif %}
+      {% if risk.is_overdue %}
+        <span class="badge bg-danger ms-1"><i class="bi bi-clock"></i> Overdue</span>
+      {% endif %}
+    </h5>
+    <div class="text-muted small mt-1">
+      {{ risk.risk_category or "" }}
+      {% if risk.asset_system %} · {{ risk.asset_system }}{% endif %}
+      {% if risk.date_identified %} · Identified {{ risk.date_identified.strftime('%Y-%m-%d') }}{% endif %}
+      {% if risk.age_days %} ({{ risk.age_days }} days ago){% endif %}
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    {% if current_user.is_operator %}
+    <a href="{{ url_for('risks.edit_risk', risk_pk=risk.id) }}" class="btn btn-sm btn-primary">
+      <i class="bi bi-pencil"></i> Edit
+    </a>
+    <a href="{{ url_for('risks.decision_request', risk_pk=risk.id) }}" class="btn btn-sm btn-outline-primary"
+       title="Generate a Risk Decision Request / Acceptance form for signature">
+      <i class="bi bi-file-earmark-word"></i> Decision / Acceptance Form
+    </a>
+    {% endif %}
+    {% if current_user.is_admin %}
+    <form method="POST" action="{{ url_for('risks.delete_risk', risk_pk=risk.id) }}"
+          onsubmit="return confirm('Delete {{ risk.risk_id }}? This cannot be undone.')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-sm btn-outline-danger">
+        <i class="bi bi-trash"></i> Delete
+      </button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="row g-3">
+
+  <!-- Left column: core details -->
+  <div class="col-lg-8">
+
+    <!-- Scores -->
+    <div class="card shadow-sm mb-3">
+      <div class="card-header py-2 small fw-semibold text-uppercase text-muted">Risk Scores</div>
+      <div class="card-body">
+        <div class="row text-center g-3">
+          <div class="col">
+            <div class="h2 fw-bold text-secondary">{{ risk.likelihood or "—" }}/5</div>
+            <div class="small text-muted">Likelihood</div>
+            <div class="xsmall text-muted">{{ likelihood_labels.get(risk.likelihood, "") }}</div>
+          </div>
+          <div class="col">
+            <div class="h2 fw-bold text-secondary">{{ risk.impact or "—" }}/5</div>
+            <div class="small text-muted">Impact</div>
+            <div class="xsmall text-muted">{{ impact_labels.get(risk.impact, "") }}</div>
+          </div>
+          <div class="col">
+            <div class="h2 fw-bold">{{ risk.inherent_risk_score or "—" }}</div>
+            <div class="small text-muted">Inherent Score</div>
+            <div class="xsmall text-muted">(max 25)</div>
+          </div>
+          <div class="col">
+            <div class="h2 fw-bold text-{{ 'danger' if risk.rag_status == 'RED' else 'warning' if risk.rag_status == 'AMBER' else 'success' }}">
+              {{ risk.control_effectiveness or "—" }}/5
+            </div>
+            <div class="small text-muted">Control Effectiveness</div>
+            <div class="xsmall text-muted">{{ effectiveness_labels.get(risk.control_effectiveness, "") }}</div>
+          </div>
+          <div class="col">
+            <div class="h2 fw-bold {{ 'text-danger' if risk.rag_status == 'RED' else 'text-warning' if risk.rag_status == 'AMBER' else 'text-success' }}">
+              {{ risk.residual_risk_score or "—" }}
+            </div>
+            <div class="small text-muted">Residual Score</div>
+            <div class="xsmall text-muted">RAG: {{ risk.rag_status }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Core Identification -->
+    <div class="card shadow-sm mb-3">
+      <div class="card-header py-2 small fw-semibold text-uppercase text-muted">Core Identification</div>
+      <div class="card-body">
+        {% macro row(label, value) %}
+        <div class="row mb-2">
+          <div class="col-4 text-muted small">{{ label }}</div>
+          <div class="col-8 small">{{ value or "—" }}</div>
+        </div>
+        {% endmacro %}
+        {{ row("Category", risk.risk_category) }}
+        {{ row("Asset / System", risk.asset_system) }}
+        {{ row("Business Process", risk.business_process) }}
+        <div class="row mb-2">
+          <div class="col-4 text-muted small">Threat Description</div>
+          <div class="col-8 small">{{ risk.threat_description or "—" }}</div>
+        </div>
+        <div class="row mb-2">
+          <div class="col-4 text-muted small">Vulnerability Detail</div>
+          <div class="col-8 small">{{ risk.vulnerability_detail or "—" }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Threat Intelligence -->
+    <div class="card shadow-sm mb-3">
+      <div class="card-header py-2 small fw-semibold text-uppercase text-muted">Threat Intelligence</div>
+      <div class="card-body">
+        {% macro row(label, value) %}
+        <div class="row mb-2">
+          <div class="col-4 text-muted small">{{ label }}</div>
+          <div class="col-8 small">{{ value or "—" }}</div>
+        </div>
+        {% endmacro %}
+        {{ row("Threat Actor Type", risk.threat_actor_type) }}
+        {{ row("Attack Vector", risk.attack_vector) }}
+        {{ row("Intel Source", risk.threat_intel_source) }}
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="card shadow-sm mb-3">
+      <div class="card-header py-2 small fw-semibold text-uppercase text-muted">Controls & Assurance</div>
+      <div class="card-body">
+        {% macro row(label, value) %}
+        <div class="row mb-2">
+          <div class="col-4 text-muted small">{{ label }}</div>
+          <div class="col-8 small">{{ value or "—" }}</div>
+        </div>
+        {% endmacro %}
+        {{ row("Existing Controls", risk.existing_controls) }}
+        {{ row("Control Type", risk.control_type) }}
+        {{ row("Effectiveness", effectiveness_labels.get(risk.control_effectiveness, risk.control_effectiveness or "—")) }}
+        {{ row("Last Test Date", risk.last_control_test_date.strftime('%Y-%m-%d') if risk.last_control_test_date else None) }}
+        {{ row("Test Result", risk.control_test_result) }}
+        {{ row("Assurance Source", risk.assurance_source) }}
+        {{ row("Risk Velocity", risk.risk_velocity) }}
+        {{ row("Detection Capability", risk.detection_capability) }}
+      </div>
+    </div>
+
+    <!-- Treatment -->
+    <div class="card shadow-sm mb-3">
+      <div class="card-header py-2 small fw-semibold text-uppercase text-muted">Treatment & Actions</div>
+      <div class="card-body">
+        {% macro row(label, value) %}
+        <div class="row mb-2">
+          <div class="col-4 text-muted small">{{ label }}</div>
+          <div class="col-8 small">{{ value or "—" }}</div>
+        </div>
+        {% endmacro %}
+        {{ row("Treatment", risk.treatment) }}
+        <div class="row mb-2">
+          <div class="col-4 text-muted small">Remediation Action</div>
+          <div class="col-8 small">{{ risk.remediation_action or "—" }}</div>
+        </div>
+        {{ row("Action Owner", risk.action_owner) }}
+        <div class="row mb-2">
+          <div class="col-4 text-muted small">Due Date</div>
+          <div class="col-8 small {{ 'text-danger fw-semibold' if risk.is_overdue }}">
+            {% if risk.due_date %}
+              {{ risk.due_date.strftime('%Y-%m-%d') }}
+              {% if risk.is_overdue %} ({{ risk.days_overdue }} days overdue){% endif %}
+            {% else %}—{% endif %}
+          </div>
+        </div>
+        {{ row("Status", risk.status) }}
+      </div>
+    </div>
+
+    <!-- NIST CSF 2.0 -->
+    {% if risk.nist_csf_function %}
+    <div class="card shadow-sm mb-3">
+      <div class="card-header py-2 small fw-semibold text-uppercase text-muted">NIST CSF 2.0 Mapping</div>
+      <div class="card-body">
+        {% macro row(label, value) %}
+        <div class="row mb-2">
+          <div class="col-4 text-muted small">{{ label }}</div>
+          <div class="col-8 small">{{ value or "—" }}</div>
+        </div>
+        {% endmacro %}
+        {{ row("Function", risk.nist_csf_function) }}
+        {{ row("Category", risk.nist_csf_category) }}
+        {{ row("Subcategory", risk.nist_csf_subcategory) }}
+      </div>
+    </div>
+    {% endif %}
+
+  </div><!-- /left col -->
+
+  <!-- Right column: sidebar info -->
+  <div class="col-lg-4">
+
+    <!-- Governance -->
+    <div class="card shadow-sm mb-3">
+      <div class="card-header py-2 small fw-semibold text-uppercase text-muted">Governance</div>
+      <div class="card-body">
+        {% macro row(label, value) %}
+        <div class="mb-2">
+          <div class="text-muted small">{{ label }}</div>
+          <div class="small fw-semibold">{{ value or "—" }}</div>
+        </div>
+        {% endmacro %}
+        {{ row("Risk Owner", risk.risk_owner) }}
+        {{ row("Escalation Path", risk.escalation_path) }}
+        {{ row("Review Frequency", risk.review_frequency) }}
+        {{ row("Last Reviewed", risk.last_reviewed.strftime('%Y-%m-%d') if risk.last_reviewed else None) }}
+        {{ row("Sign-Off By", risk.acceptance_sign_off_by) }}
+        {{ row("Sign-Off Date", risk.acceptance_sign_off_date.strftime('%Y-%m-%d') if risk.acceptance_sign_off_date else None) }}
+        {% if risk.regulatory_obligation %}
+        {{ row("Regulatory Obligation", risk.regulatory_obligation) }}
+        {% endif %}
+        {% if risk.related_incident_ref %}
+        {{ row("Related Incident", risk.related_incident_ref) }}
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Financial -->
+    <div class="card shadow-sm mb-3">
+      <div class="card-header py-2 small fw-semibold text-uppercase text-muted">Financial Exposure</div>
+      <div class="card-body">
+        <div class="mb-2">
+          <div class="text-muted small">Min Exposure</div>
+          <div class="small fw-semibold">
+            {{ "${:,.0f}".format(risk.min_financial_exposure) if risk.min_financial_exposure else "—" }}
+          </div>
+        </div>
+        <div>
+          <div class="text-muted small">Max Exposure</div>
+          <div class="small fw-semibold">
+            {{ "${:,.0f}".format(risk.max_financial_exposure) if risk.max_financial_exposure else "—" }}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Evidence & Notes -->
+    {% if risk.evidence_links or risk.notes_history %}
+    <div class="card shadow-sm mb-3">
+      <div class="card-header py-2 small fw-semibold text-uppercase text-muted">Evidence & Notes</div>
+      <div class="card-body small">
+        {% if risk.evidence_links %}
+        <div class="mb-2">
+          <div class="text-muted">Evidence / Links</div>
+          <div style="white-space:pre-wrap;">{{ risk.evidence_links }}</div>
+        </div>
+        {% endif %}
+        {% if risk.notes_history %}
+        <div>
+          <div class="text-muted">Notes / History</div>
+          <div style="white-space:pre-wrap;">{{ risk.notes_history }}</div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Add Trend Entry -->
+    {% if current_user.is_operator %}
+    <div class="card shadow-sm mb-3">
+      <div class="card-header py-2 small fw-semibold text-uppercase text-muted">Log Review</div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('risks.add_trend', risk_pk=risk.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="mb-2">
+            <label class="form-label small mb-1">Review Date</label>
+            <input type="date" name="review_date" class="form-control form-control-sm"
+                   value="{{ today.isoformat() if today is defined else '' }}">
+          </div>
+          <div class="mb-2">
+            <label class="form-label small mb-1">Reviewer</label>
+            <input type="text" name="reviewer" class="form-control form-control-sm"
+                   value="{{ current_user.name }}">
+          </div>
+          <div class="mb-2">
+            <label class="form-label small mb-1">Test Result</label>
+            <select name="control_test_result" class="form-select form-select-sm">
+              <option value="">—</option>
+              <option>Pass</option><option>Fail</option><option>Not Tested</option>
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small mb-1">Notes</label>
+            <textarea name="notes" class="form-control form-control-sm" rows="2"></textarea>
+          </div>
+          <button type="submit" class="btn btn-sm btn-outline-primary w-100">Log Review</button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+
+  </div><!-- /right col -->
+</div>
+
+<!-- Trend History -->
+{% if trend_entries %}
+<div class="card shadow-sm mb-3">
+  <div class="card-header py-2 small fw-semibold text-uppercase text-muted">Risk Trend Log</div>
+  <div class="card-body p-0">
+    <table class="table table-sm small mb-0">
+      <thead><tr>
+        <th>Date</th><th>Residual Score</th><th>RAG</th>
+        <th>Change vs Prior</th><th>Reviewer</th><th>Test Result</th><th>Notes</th>
+      </tr></thead>
+      <tbody>
+        {% for e in trend_entries | reverse %}
+        <tr>
+          <td>{{ e.review_date.strftime('%Y-%m-%d') }}</td>
+          <td>{{ e.residual_score or "—" }}</td>
+          <td><span class="badge badge-rag-{{ e.rag_status or 'UNKNOWN' }}">{{ e.rag_status or "?" }}</span></td>
+          <td>
+            {% if e.change_vs_prior is not none %}
+              <span class="{{ 'text-success' if e.change_vs_prior < 0 else 'text-danger' if e.change_vs_prior > 0 else 'text-muted' }}">
+                {{ ("+" if e.change_vs_prior > 0 else "") + "{}".format(e.change_vs_prior) }}
+              </span>
+            {% else %}—{% endif %}
+          </td>
+          <td>{{ e.reviewer or "—" }}</td>
+          <td>{{ e.control_test_result or "—" }}</td>
+          <td>{{ e.notes or "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<!-- Audit Log -->
+{% if current_user.is_admin and audit_entries %}
+<div class="card shadow-sm">
+  <div class="card-header py-2 small fw-semibold text-uppercase text-muted">Audit Log</div>
+  <div class="card-body p-0">
+    <table class="table table-sm small mb-0">
+      <thead><tr><th>Timestamp</th><th>User</th><th>Action</th><th>Field</th><th>Old Value</th><th>New Value</th></tr></thead>
+      <tbody>
+        {% for e in audit_entries %}
+        <tr>
+          <td class="text-nowrap">{{ e.timestamp.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td>{{ e.user.name if e.user else "—" }}</td>
+          <td><span class="badge bg-secondary">{{ e.action }}</span></td>
+          <td>{{ e.field_name or "—" }}</td>
+          <td class="text-truncate" style="max-width:150px;" title="{{ e.old_value }}">{{ e.old_value or "—" }}</td>
+          <td class="text-truncate" style="max-width:150px;" title="{{ e.new_value }}">{{ e.new_value or "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Set today's date for log review form
+const d = document.querySelector('input[name="review_date"]');
+if (d && !d.value) d.value = new Date().toISOString().split('T')[0];
+</script>
+{% endblock %}

@@ -1,0 +1,5 @@
+{$SERVER_NAME} {
+    tls internal
+
+    reverse_proxy web:{$PORT}
+}

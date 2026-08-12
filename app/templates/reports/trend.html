@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Risk Trend Log — Skerry{% endblock %}
+{% block breadcrumb %}Reports &rsaquo; Risk Trend Log{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<h5 class="fw-bold mb-3">Risk Trend Log</h5>
+
+{% if trend_data %}
+
+<!-- Trend Chart -->
+<div class="card shadow-sm mb-3">
+  <div class="card-header py-2 small fw-semibold text-uppercase text-muted">Residual Score Over Time</div>
+  <div class="card-body">
+    <canvas id="trendChart" height="80"></canvas>
+  </div>
+</div>
+
+<!-- Trend Tables per Risk -->
+{% for risk_id, data in trend_data.items() %}
+<div class="card shadow-sm mb-3">
+  <div class="card-header py-2 d-flex align-items-center gap-2">
+    <a href="{{ url_for('risks.detail', risk_pk=data.risk.id) }}"
+       class="fw-semibold text-decoration-none">{{ risk_id }}</a>
+    <span class="badge badge-rag-{{ data.risk.rag_status }}">{{ data.risk.rag_status }}</span>
+    <span class="text-muted small">{{ (data.risk.threat_description or "")[:80] }}</span>
+  </div>
+  <div class="card-body p-0">
+    <table class="table table-sm small mb-0">
+      <thead><tr>
+        <th>Review Date</th><th>Residual Score</th><th>RAG</th>
+        <th>Change vs Prior</th><th>Reviewer</th><th>Test Result</th><th>Notes</th>
+      </tr></thead>
+      <tbody>
+        {% for e in data.entries %}
+        <tr>
+          <td>{{ e.review_date.strftime('%Y-%m-%d') }}</td>
+          <td class="fw-semibold">{{ e.residual_score if e.residual_score is not none else "—" }}</td>
+          <td><span class="badge badge-rag-{{ e.rag_status or 'UNKNOWN' }}">{{ e.rag_status or "?" }}</span></td>
+          <td>
+            {% if e.change_vs_prior is not none %}
+              <span class="{{ 'text-success' if e.change_vs_prior < 0 else 'text-danger' if e.change_vs_prior > 0 else 'text-muted' }}">
+                {{ ("+" if e.change_vs_prior > 0 else "") + "{}".format(e.change_vs_prior) }}
+              </span>
+            {% else %}—{% endif %}
+          </td>
+          <td>{{ e.reviewer or "—" }}</td>
+          <td>
+            {% if e.control_test_result %}
+              <span class="badge {{ 'bg-success' if e.control_test_result == 'Pass' else 'bg-danger' if e.control_test_result == 'Fail' else 'bg-secondary' }}">
+                {{ e.control_test_result }}
+              </span>
+            {% else %}—{% endif %}
+          </td>
+          <td>{{ e.notes or "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endfor %}
+
+{% else %}
+<div class="alert alert-info">
+  No trend data yet. Log your first review on any risk's detail page.
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if trend_data %}
+<script>
+const colors = ['#2e75b6','#dc3545','#198754','#fd7e14','#6610f2','#0dcaf0'];
+const datasets = [];
+let allDates = new Set();
+
+{% for risk_id, data in trend_data.items() %}
+  {% for e in data.entries %}
+  allDates.add('{{ e.review_date.strftime("%Y-%m-%d") }}');
+  {% endfor %}
+{% endfor %}
+
+const labels = [...allDates].sort();
+
+{% for risk_id, data in trend_data.items() %}
+{%- set loop_idx = loop.index0 %}
+const data_{{ loop_idx }} = {};
+{% for e in data.entries %}
+data_{{ loop_idx }}['{{ e.review_date.strftime("%Y-%m-%d") }}'] = {{ e.residual_score if e.residual_score is not none else 'null' }};
+{% endfor %}
+datasets.push({
+  label: '{{ risk_id }}',
+  data: labels.map(d => data_{{ loop_idx }}[d] ?? null),
+  borderColor: colors[{{ loop_idx }} % colors.length],
+  backgroundColor: 'transparent',
+  tension: 0.3,
+  pointRadius: 4,
+  spanGaps: true,
+});
+{% endfor %}
+
+new Chart(document.getElementById('trendChart'), {
+  type: 'line',
+  data: { labels, datasets },
+  options: {
+    responsive: true,
+    plugins: {
+      legend: { position: 'right', labels: { font: { size: 11 } } },
+      tooltip: { mode: 'index', intersect: false },
+    },
+    scales: {
+      y: { min: 0, max: 25, title: { display: true, text: 'Residual Score' } },
+      x: { title: { display: true, text: 'Review Date' } },
+    },
+  },
+});
+</script>
+{% endif %}
+{% endblock %}

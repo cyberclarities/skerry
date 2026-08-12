@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}CSF Coverage — Skerry{% endblock %}
+{% block breadcrumb %}Reports &rsaquo; NIST CSF 2.0 Coverage{% endblock %}
+
+{% block content %}
+<h5 class="fw-bold mb-3">NIST CSF 2.0 Coverage Dashboard</h5>
+
+<!-- Function Summary -->
+<div class="card shadow-sm mb-3">
+  <div class="card-header py-2 small fw-semibold text-uppercase text-muted">Function Coverage Summary</div>
+  <div class="card-body p-0">
+    <table class="table table-sm small mb-0">
+      <thead>
+        <tr>
+          <th>Function</th><th>Total Risks</th>
+          <th>RED</th><th>AMBER</th><th>GREEN</th>
+          <th>Exceeds Appetite</th><th>Overdue</th>
+          <th>Avg Residual</th><th>Coverage</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for func_code, func_name in nist_functions %}
+        {% set s = function_stats[func_code] %}
+        <tr class="{{ 'table-warning' if s.total == 0 }}">
+          <td><strong>{{ func_code }}</strong> — {{ func_name }}</td>
+          <td class="text-center">{{ s.total }}</td>
+          <td class="text-center">
+            {% if s.red > 0 %}<span class="badge bg-danger">{{ s.red }}</span>{% else %}—{% endif %}
+          </td>
+          <td class="text-center">
+            {% if s.amber > 0 %}<span class="badge" style="background:#fd7e14;">{{ s.amber }}</span>{% else %}—{% endif %}
+          </td>
+          <td class="text-center">
+            {% if s.green > 0 %}<span class="badge bg-success">{{ s.green }}</span>{% else %}—{% endif %}
+          </td>
+          <td class="text-center">{{ s.exceeds_appetite if s.exceeds_appetite else "—" }}</td>
+          <td class="text-center">{{ s.overdue if s.overdue else "—" }}</td>
+          <td class="text-center fw-semibold {{ 'text-danger' if s.avg_residual and s.avg_residual >= 15 else 'text-warning' if s.avg_residual and s.avg_residual >= 9 else 'text-success' if s.avg_residual else '' }}">
+            {{ s.avg_residual if s.avg_residual else "—" }}
+          </td>
+          <td class="text-center">
+            {% if s.total == 0 %}
+              <span class="badge bg-warning text-dark">Not Mapped</span>
+            {% else %}
+              <span class="badge bg-success">Mapped</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Category Breakdown -->
+{% for func_code, func_name in nist_functions %}
+{% set func_cats = category_stats.items() | selectattr("1.function_code", "eq", func_code) | list %}
+{% if func_cats %}
+<div class="card shadow-sm mb-3">
+  <div class="card-header py-2 small fw-semibold text-uppercase text-muted">
+    {{ func_code }} — {{ func_name }}: Category Detail
+  </div>
+  <div class="card-body p-0">
+    <table class="table table-sm small mb-0">
+      <thead>
+        <tr>
+          <th>Category</th><th>Total</th>
+          <th>RED</th><th>AMBER</th><th>GREEN</th>
+          <th>Avg Residual</th><th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for cat_code, cat_stats in func_cats %}
+        <tr class="{{ 'table-light text-muted' if cat_stats.total == 0 }}">
+          <td><strong>{{ cat_code }}</strong> — {{ cat_stats.name }}</td>
+          <td class="text-center">{{ cat_stats.total }}</td>
+          <td class="text-center">{% if cat_stats.red > 0 %}<span class="badge bg-danger">{{ cat_stats.red }}</span>{% else %}—{% endif %}</td>
+          <td class="text-center">{% if cat_stats.amber > 0 %}<span class="badge" style="background:#fd7e14;">{{ cat_stats.amber }}</span>{% else %}—{% endif %}</td>
+          <td class="text-center">{% if cat_stats.green > 0 %}<span class="badge bg-success">{{ cat_stats.green }}</span>{% else %}—{% endif %}</td>
+          <td class="text-center">{{ cat_stats.avg_residual or "—" }}</td>
+          <td>
+            {% if cat_stats.not_mapped %}
+              <span class="badge bg-secondary">No risks mapped</span>
+            {% else %}
+              <span class="badge bg-success">{{ cat_stats.total }} risk{{ "s" if cat_stats.total != 1 }}</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endfor %}
+
+<!-- Unmapped Risks -->
+{% if unmapped %}
+<div class="card shadow-sm border-warning mb-3">
+  <div class="card-header py-2 small fw-semibold text-uppercase text-warning">
+    <i class="bi bi-exclamation-triangle"></i>
+    {{ unmapped | length }} Risk{{ "s" if unmapped | length != 1 }} Without CSF Mapping
+  </div>
+  <div class="card-body p-0">
+    <table class="table table-sm small mb-0">
+      <thead><tr><th>Risk ID</th><th>Category</th><th>Threat Description</th><th>RAG</th></tr></thead>
+      <tbody>
+        {% for r in unmapped %}
+        <tr>
+          <td><a href="{{ url_for('risks.detail', risk_pk=r.id) }}" class="text-decoration-none">{{ r.risk_id }}</a></td>
+          <td>{{ r.risk_category or "—" }}</td>
+          <td>{{ (r.threat_description or "—")[:80] }}</td>
+          <td><span class="badge badge-rag-{{ r.rag_status }}">{{ r.rag_status }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

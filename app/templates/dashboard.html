@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Skerry{% endblock %}
+{% block breadcrumb %}Dashboard{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+
+<!-- KPI Row -->
+<div class="row g-3 mb-4">
+  {% set kpis = [
+    ("Total Risks",         total,                    "shield-exclamation", "primary"),
+    ("RED",                 red_count,                "circle-fill",        "danger"),
+    ("AMBER",               amber_count,              "circle-fill",        "warning"),
+    ("GREEN",               green_count,              "circle-fill",        "success"),
+    ("Exceed Appetite",     exceeds_appetite_count,   "exclamation-triangle","warning"),
+    ("Overdue Actions",     overdue_count,            "clock-history",      "danger"),
+    ("Board Escalations",   board_flag_count,         "flag-fill",          "primary"),
+  ] %}
+  {% for label, val, icon, color in kpis %}
+  <div class="col-6 col-md-3 col-xl">
+    <div class="card kpi-card shadow-sm h-100">
+      <div class="card-body py-3 px-3">
+        <div class="d-flex align-items-center gap-2 mb-1">
+          <i class="bi bi-{{ icon }} text-{{ color }}"></i>
+          <span class="kpi-label">{{ label }}</span>
+        </div>
+        <div class="kpi-value text-{{ color }}">{{ val }}</div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="row g-3 mb-4">
+
+  <!-- Heat Map -->
+  <div class="col-lg-5">
+    <div class="card shadow-sm h-100">
+      <div class="card-header fw-semibold small text-uppercase text-muted py-2">
+        Risk Heat Map — Likelihood × Impact
+      </div>
+      <div class="card-body">
+        <div class="d-flex align-items-center mb-2">
+          <div class="text-muted small me-2" style="writing-mode:vertical-rl; transform:rotate(180deg);">
+            Impact →
+          </div>
+          <div>
+            <!-- Row: impact 5 down to 1 -->
+            {% for impact in [5,4,3,2,1] %}
+            <div class="d-flex gap-1 mb-1 align-items-center">
+              <span class="text-muted small me-1" style="width:1.2rem;">{{ impact }}</span>
+              {% for likelihood in [1,2,3,4,5] %}
+                {% set count = heat_map.get((likelihood, impact), 0) %}
+                {% set score = likelihood * impact %}
+                {% if score >= 15 %}{% set cls = "heat-5" %}
+                {% elif score >= 9 %}{% set cls = "heat-3" %}
+                {% elif count > 0 %}{% set cls = "heat-1" %}
+                {% else %}{% set cls = "heat-0" %}{% endif %}
+              <div class="heat-cell {{ cls }}" title="L={{ likelihood }} I={{ impact }} Score={{ score }}">
+                {{ count if count > 0 else "" }}
+              </div>
+              {% endfor %}
+            </div>
+            {% endfor %}
+            <div class="d-flex gap-1 mt-1">
+              <span style="width:1.8rem;"></span>
+              {% for l in [1,2,3,4,5] %}
+              <div style="width:54px; text-align:center;" class="text-muted small">{{ l }}</div>
+              {% endfor %}
+            </div>
+            <div class="text-center text-muted small mt-1">Likelihood →</div>
+          </div>
+        </div>
+        <div class="d-flex gap-3 mt-2 small">
+          <span><span class="badge" style="background:#dc3545;">&nbsp;</span> RED ≥15</span>
+          <span><span class="badge" style="background:#fd7e14;">&nbsp;</span> AMBER 9–14</span>
+          <span><span class="badge" style="background:#d4edda; color:#155724;">&nbsp;</span> GREEN ≤8</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Control Test Results + Velocity -->
+  <div class="col-lg-3">
+    <div class="card shadow-sm mb-3">
+      <div class="card-header fw-semibold small text-uppercase text-muted py-2">Control Test Results</div>
+      <div class="card-body py-3">
+        <canvas id="testChart" height="140"></canvas>
+      </div>
+    </div>
+    <div class="card shadow-sm">
+      <div class="card-header fw-semibold small text-uppercase text-muted py-2">Risk Velocity</div>
+      <div class="card-body py-3">
+        {% for v, c in velocity_counts.items() %}
+        <div class="d-flex justify-content-between align-items-center mb-1 small">
+          <span>{{ v }}</span>
+          <span class="badge bg-secondary rounded-pill">{{ c }}</span>
+        </div>
+        {% else %}
+        <span class="text-muted small">No data</span>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Financial Exposure + Category Breakdown -->
+  <div class="col-lg-4">
+    <div class="card shadow-sm mb-3">
+      <div class="card-header fw-semibold small text-uppercase text-muted py-2">Financial Exposure</div>
+      <div class="card-body py-2">
+        <table class="table table-sm mb-0">
+          <tr>
+            <td class="text-muted small">Total Min Exposure</td>
+            <td class="fw-semibold text-end">${{ "{:,.0f}".format(fin_stats.total_min) }}</td>
+          </tr>
+          <tr>
+            <td class="text-muted small">Total Max Exposure</td>
+            <td class="fw-semibold text-end">${{ "{:,.0f}".format(fin_stats.total_max) }}</td>
+          </tr>
+          <tr>
+            <td class="text-muted small">Avg Max Exposure (RED)</td>
+            <td class="fw-semibold text-danger text-end">${{ "{:,.0f}".format(fin_stats.avg_red_max) }}</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+    <div class="card shadow-sm">
+      <div class="card-header fw-semibold small text-uppercase text-muted py-2">By Category</div>
+      <div class="card-body py-2">
+        {% for cat, cnt in category_counts.items() %}
+        <div class="d-flex justify-content-between align-items-center mb-1 small">
+          <span class="text-truncate" style="max-width:160px;">{{ cat }}</span>
+          <span class="badge bg-secondary rounded-pill">{{ cnt }}</span>
+        </div>
+        {% else %}
+        <span class="text-muted small">No risks logged.</span>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Recent Activity -->
+<div class="card shadow-sm">
+  <div class="card-header d-flex justify-content-between align-items-center py-2">
+    <span class="fw-semibold small text-uppercase text-muted">Recently Updated Risks</span>
+    <a href="{{ url_for('risks.list_risks') }}" class="btn btn-sm btn-outline-secondary">View All</a>
+  </div>
+  <div class="card-body p-0">
+    <table class="table table-hover mb-0 small">
+      <thead>
+        <tr>
+          <th>Risk ID</th><th>Category</th><th>Threat (Summary)</th>
+          <th>Owner</th><th>RAG</th><th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in recent_risks %}
+        <tr>
+          <td><a href="{{ url_for('risks.detail', risk_pk=r.id) }}" class="fw-semibold text-decoration-none">{{ r.risk_id }}</a></td>
+          <td>{{ r.risk_category or "—" }}</td>
+          <td class="text-truncate" style="max-width:300px;">{{ (r.threat_description or "—")[:80] }}</td>
+          <td>{{ r.risk_owner or "—" }}</td>
+          <td><span class="badge badge-rag-{{ r.rag_status }}">{{ r.rag_status }}</span></td>
+          <td>{{ r.status }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="text-center text-muted py-3">No risks logged yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const testCtx = document.getElementById('testChart');
+new Chart(testCtx, {
+  type: 'doughnut',
+  data: {
+    labels: ['Pass', 'Fail', 'Not Tested'],
+    datasets: [{
+      data: [{{ pass_count }}, {{ fail_count }}, {{ not_tested_count }}],
+      backgroundColor: ['#198754', '#dc3545', '#6c757d'],
+      borderWidth: 2,
+    }]
+  },
+  options: {
+    plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } },
+    cutout: '60%',
+  }
+});
+</script>
+{% endblock %}

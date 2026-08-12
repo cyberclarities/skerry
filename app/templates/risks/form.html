@@ -1,0 +1,328 @@
+{% extends "base.html" %}
+{% block title %}{{ "Edit " + risk.risk_id if risk else "New Risk" }} — Skerry{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('risks.list_risks') }}" class="text-muted text-decoration-none">The Chart</a>
+  &rsaquo; {{ "Edit " + risk.risk_id if risk else "New Risk" }}
+{% endblock %}
+
+{% block content %}
+<h5 class="fw-bold mb-3">{{ "Edit " + risk.risk_id if risk else "New Risk — " + next_id }}</h5>
+
+<form method="POST" action="{{ url_for('risks.edit_risk', risk_pk=risk.id) if risk else url_for('risks.new_risk') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  {% macro field(label, name, type="text", required=false, hint="") %}
+  {% set val = risk | attr(name) if risk else none %}
+  <div class="mb-3">
+    <label for="{{ name }}" class="form-label fw-semibold small mb-1">
+      {{ label }}{% if required %} <span class="text-danger">*</span>{% endif %}
+    </label>
+    {% if type == "textarea" %}
+    <textarea class="form-control form-control-sm" id="{{ name }}" name="{{ name }}"
+              rows="2">{{ val if val is not none else "" }}</textarea>
+    {% elif type == "date" %}
+    <input type="date" class="form-control form-control-sm" id="{{ name }}" name="{{ name }}"
+           value="{{ val.isoformat() if val else '' }}">
+    {% elif type == "number" %}
+    <input type="number" class="form-control form-control-sm" id="{{ name }}" name="{{ name }}"
+           value="{{ val if val is not none else '' }}">
+    {% else %}
+    <input type="{{ type }}" class="form-control form-control-sm" id="{{ name }}" name="{{ name }}"
+           value="{{ val if val is not none else '' }}"
+           {{ "required" if required }}>
+    {% endif %}
+    {% if hint %}<div class="form-text">{{ hint }}</div>{% endif %}
+  </div>
+  {% endmacro %}
+
+  {% macro select_field(label, name, choices, required=false) %}
+  {% set current = risk | attr(name) if risk else "" %}
+  <div class="mb-3">
+    <label for="{{ name }}" class="form-label fw-semibold small mb-1">
+      {{ label }}{% if required %} <span class="text-danger">*</span>{% endif %}
+    </label>
+    <select class="form-select form-select-sm" id="{{ name }}" name="{{ name }}"
+            {{ "required" if required }}>
+      <option value="">— Select —</option>
+      {% for c in choices %}
+        <option value="{{ c }}" {{ "selected" if current == c }}>{{ c }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% endmacro %}
+
+  {% macro score_field(label, name, labels_dict) %}
+  {% set current = risk | attr(name) if risk else none %}
+  <div class="mb-3">
+    <label for="{{ name }}" class="form-label fw-semibold small mb-1">{{ label }}</label>
+    <select class="form-select form-select-sm" id="{{ name }}" name="{{ name }}"
+            onchange="updateScores()">
+      <option value="">— Select —</option>
+      {% for val, lbl in labels_dict.items() %}
+        <option value="{{ val }}" {{ "selected" if current == val }}>{{ val }} — {{ lbl }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% endmacro %}
+
+  <div class="row g-3">
+
+    <!-- Left column -->
+    <div class="col-lg-8">
+
+      <!-- Section: Core Identification -->
+      <div class="card shadow-sm mb-3">
+        <div class="card-header py-2 small fw-semibold text-uppercase text-muted bg-primary text-white">
+          Core Identification
+        </div>
+        <div class="card-body">
+          <div class="row">
+            <div class="col-md-6">{{ select_field("Risk Category", "risk_category", risk_categories) }}</div>
+            <div class="col-md-6">{{ field("Asset / System", "asset_system") }}</div>
+          </div>
+          {{ field("Business Process / Service Affected", "business_process", type="textarea") }}
+          {{ field("Threat Description", "threat_description", type="textarea", required=true) }}
+          {{ field("Vulnerability Detail", "vulnerability_detail", type="textarea") }}
+        </div>
+      </div>
+
+      <!-- Section: Threat Intelligence -->
+      <div class="card shadow-sm mb-3">
+        <div class="card-header py-2 small fw-semibold text-uppercase text-muted">Threat Intelligence</div>
+        <div class="card-body">
+          <div class="row">
+            <div class="col-md-4">{{ select_field("Threat Actor Type", "threat_actor_type", threat_actors) }}</div>
+            <div class="col-md-4">{{ select_field("Attack Vector", "attack_vector", attack_vectors) }}</div>
+            <div class="col-md-4">{{ select_field("Threat Intel Source", "threat_intel_source", intel_sources) }}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section: Risk Scoring -->
+      <div class="card shadow-sm mb-3">
+        <div class="card-header py-2 small fw-semibold text-uppercase text-muted">Risk Scoring</div>
+        <div class="card-body">
+          <div class="row">
+            <div class="col-md-4">{{ score_field("Likelihood (1-5)", "likelihood", likelihood_labels) }}</div>
+            <div class="col-md-4">{{ score_field("Impact (1-5)", "impact", impact_labels) }}</div>
+            <div class="col-md-4">
+              <div class="mb-3">
+                <label class="form-label fw-semibold small mb-1">Inherent Risk Score</label>
+                <div id="inherent-score" class="form-control form-control-sm bg-light text-center fw-bold">
+                  {% if risk and risk.inherent_risk_score %}{{ risk.inherent_risk_score }}{% else %}—{% endif %}
+                </div>
+                <div class="form-text">Likelihood × Impact (auto-calculated)</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section: Controls & Assurance -->
+      <div class="card shadow-sm mb-3">
+        <div class="card-header py-2 small fw-semibold text-uppercase text-muted">Controls & Assurance</div>
+        <div class="card-body">
+          {{ field("Existing Controls", "existing_controls", type="textarea") }}
+          <div class="row">
+            <div class="col-md-4">{{ select_field("Control Type", "control_type", control_types) }}</div>
+            <div class="col-md-4">{{ score_field("Control Effectiveness (1-5)", "control_effectiveness", effectiveness_labels) }}</div>
+            <div class="col-md-4">
+              <div class="mb-3">
+                <label class="form-label fw-semibold small mb-1">Residual Score</label>
+                <div id="residual-score" class="form-control form-control-sm bg-light text-center fw-bold">
+                  {% if risk and risk.residual_risk_score %}{{ risk.residual_risk_score }}{% else %}—{% endif %}
+                </div>
+                <div class="form-text">Auto-calculated</div>
+              </div>
+            </div>
+          </div>
+          <div class="row">
+            <div class="col-md-4">{{ field("Last Control Test Date", "last_control_test_date", type="date") }}</div>
+            <div class="col-md-4">{{ select_field("Control Test Result", "control_test_result", test_results) }}</div>
+            <div class="col-md-4">{{ select_field("Assurance Source", "assurance_source", assurance_sources) }}</div>
+          </div>
+          <div class="row">
+            <div class="col-md-6">{{ select_field("Risk Velocity", "risk_velocity", velocities) }}</div>
+            <div class="col-md-6">{{ select_field("Detection Capability", "detection_capability", detection_capabilities) }}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section: Treatment & Actions -->
+      <div class="card shadow-sm mb-3">
+        <div class="card-header py-2 small fw-semibold text-uppercase text-muted">Treatment & Actions</div>
+        <div class="card-body">
+          <div class="row">
+            <div class="col-md-4">{{ select_field("Treatment", "treatment", treatments) }}</div>
+            <div class="col-md-4">{{ select_field("Status", "status", statuses) }}</div>
+            <div class="col-md-4">{{ field("Action Owner", "action_owner") }}</div>
+          </div>
+          {{ field("Remediation Action", "remediation_action", type="textarea") }}
+          {{ field("Due Date", "due_date", type="date") }}
+          {% if current_user.is_admin %}
+          <div class="row mt-2">
+            <div class="col-md-6">{{ field("Acceptance Sign-Off By", "acceptance_sign_off_by") }}</div>
+            <div class="col-md-6">{{ field("Acceptance Sign-Off Date", "acceptance_sign_off_date", type="date") }}</div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+    </div><!-- /left col -->
+
+    <!-- Right column -->
+    <div class="col-lg-4">
+
+      <!-- Governance -->
+      <div class="card shadow-sm mb-3">
+        <div class="card-header py-2 small fw-semibold text-uppercase text-muted">Governance</div>
+        <div class="card-body">
+          {% if risk_owners %}
+            {{ select_field("Risk Owner", "risk_owner", risk_owners) }}
+          {% else %}
+            {{ field("Risk Owner", "risk_owner") }}
+          {% endif %}
+          {{ field("Escalation Path", "escalation_path") }}
+          {{ select_field("Review Frequency", "review_frequency", frequencies) }}
+          {{ field("Date Identified", "date_identified", type="date") }}
+          {{ field("Last Reviewed", "last_reviewed", type="date") }}
+          <div class="mb-3">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="board_reporting_flag"
+                     id="board_reporting_flag"
+                     {{ "checked" if risk and risk.board_reporting_flag }}>
+              <label class="form-check-label small" for="board_reporting_flag">
+                Board Reporting Flag
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Financial -->
+      <div class="card shadow-sm mb-3">
+        <div class="card-header py-2 small fw-semibold text-uppercase text-muted">Financial & Business Impact</div>
+        <div class="card-body">
+          {{ field("Est. Min Financial Exposure (USD)", "min_financial_exposure", type="number") }}
+          {{ field("Est. Max Financial Exposure (USD)", "max_financial_exposure", type="number") }}
+          {{ field("Regulatory / Legal Obligation", "regulatory_obligation", type="textarea") }}
+          {{ field("Related Incident / Near-Miss Ref", "related_incident_ref") }}
+        </div>
+      </div>
+
+      <!-- NIST CSF 2.0 -->
+      <div class="card shadow-sm mb-3">
+        <div class="card-header py-2 small fw-semibold text-uppercase text-muted">NIST CSF 2.0 Mapping</div>
+        <div class="card-body">
+          <div class="mb-3">
+            <label for="nist_csf_function" class="form-label fw-semibold small mb-1">Function</label>
+            <select class="form-select form-select-sm" id="nist_csf_function" name="nist_csf_function"
+                    onchange="loadNISTCategories(this.value)">
+              <option value="">— Select —</option>
+              {% for code, name in nist_functions %}
+              <option value="{{ code }}" {{ "selected" if risk and risk.nist_csf_function == code }}>
+                {{ code }} — {{ name }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label for="nist_csf_category" class="form-label fw-semibold small mb-1">Category</label>
+            <select class="form-select form-select-sm" id="nist_csf_category" name="nist_csf_category"
+                    onchange="loadNISTSubcategories(this.value)">
+              <option value="">— Select Function first —</option>
+              {% if risk and risk.nist_csf_category %}
+              {% for code, name, fc in nist_categories if fc == risk.nist_csf_function %}
+              <option value="{{ code }}" {{ "selected" if risk.nist_csf_category == code }}>{{ code }} — {{ name }}</option>
+              {% endfor %}
+              {% endif %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label for="nist_csf_subcategory" class="form-label fw-semibold small mb-1">Subcategory</label>
+            <select class="form-select form-select-sm" id="nist_csf_subcategory" name="nist_csf_subcategory">
+              <option value="">— Select Category first —</option>
+              {% if risk and risk.nist_csf_subcategory %}
+              {% for code, desc, cc in nist_subcategories if cc == risk.nist_csf_category %}
+              <option value="{{ code }}" {{ "selected" if risk.nist_csf_subcategory == code }}>{{ code }}</option>
+              {% endfor %}
+              {% endif %}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Evidence -->
+      <div class="card shadow-sm mb-3">
+        <div class="card-header py-2 small fw-semibold text-uppercase text-muted">Evidence & Notes</div>
+        <div class="card-body">
+          {{ field("Evidence / Links", "evidence_links", type="textarea") }}
+          {{ field("Notes / History", "notes_history", type="textarea") }}
+        </div>
+      </div>
+
+    </div><!-- /right col -->
+  </div><!-- /row -->
+
+  <div class="d-flex gap-2 mt-2">
+    <button type="submit" class="btn btn-primary">
+      <i class="bi bi-save"></i> {{ "Save Changes" if risk else "Create Risk" }}
+    </button>
+    <a href="{{ url_for('risks.detail', risk_pk=risk.id) if risk else url_for('risks.list_risks') }}"
+       class="btn btn-outline-secondary">Cancel</a>
+  </div>
+
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const reductions = {1: 0.10, 2: 0.25, 3: 0.35, 4: 0.50, 5: 0.65};
+
+function updateScores() {
+  const l = parseInt(document.getElementById('likelihood').value) || 0;
+  const i = parseInt(document.getElementById('impact').value) || 0;
+  const e = parseInt(document.getElementById('control_effectiveness').value) || 0;
+  const inh = l && i ? l * i : null;
+  document.getElementById('inherent-score').textContent = inh ? inh : '—';
+  if (inh) {
+    const red = e ? Math.round(inh * (1 - (reductions[e] || 0)) * 10) / 10 : inh;
+    document.getElementById('residual-score').textContent = red;
+  } else {
+    document.getElementById('residual-score').textContent = '—';
+  }
+}
+
+async function loadNISTCategories(funcCode) {
+  const catSel = document.getElementById('nist_csf_category');
+  const subSel = document.getElementById('nist_csf_subcategory');
+  catSel.innerHTML = '<option value="">Loading…</option>';
+  subSel.innerHTML = '<option value="">— Select Category first —</option>';
+  if (!funcCode) {
+    catSel.innerHTML = '<option value="">— Select Function first —</option>';
+    return;
+  }
+  const res = await fetch(`/risks/api/nist/categories?function=${funcCode}`);
+  const data = await res.json();
+  catSel.innerHTML = '<option value="">— Select —</option>';
+  data.forEach(c => {
+    catSel.innerHTML += `<option value="${c.code}">${c.code} — ${c.name}</option>`;
+  });
+}
+
+async function loadNISTSubcategories(catCode) {
+  const subSel = document.getElementById('nist_csf_subcategory');
+  subSel.innerHTML = '<option value="">Loading…</option>';
+  if (!catCode) {
+    subSel.innerHTML = '<option value="">— Select Category first —</option>';
+    return;
+  }
+  const res = await fetch(`/risks/api/nist/subcategories?category=${catCode}`);
+  const data = await res.json();
+  subSel.innerHTML = '<option value="">— Select —</option>';
+  data.forEach(s => {
+    subSel.innerHTML += `<option value="${s.code}">${s.code} — ${s.desc.substring(0, 60)}…</option>`;
+  });
+}
+</script>
+{% endblock %}

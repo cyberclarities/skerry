@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+{% block title %}Settings — Skerry{% endblock %}
+{% block breadcrumb %}Admin &rsaquo; Settings{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h5 class="fw-bold mb-0">Settings — Lookup Lists</h5>
+</div>
+
+<p class="text-muted small mb-4">
+  Manage the dropdown options available when creating or editing risks.
+  Removing an item hides it from new entries but does not change existing risk records.
+</p>
+
+<!-- Tab nav -->
+<ul class="nav nav-tabs mb-0" id="settingsTabs" role="tablist">
+  {% for cat, label in labels.items() %}
+  <li class="nav-item" role="presentation">
+    <button class="nav-link {{ 'active' if loop.first }}"
+            id="tab-{{ cat }}"
+            data-bs-toggle="tab"
+            data-bs-target="#pane-{{ cat }}"
+            type="button" role="tab">
+      {{ label }}
+      <span class="badge bg-secondary ms-1">{{ grouped[cat] | selectattr('is_active') | list | length }}</span>
+    </button>
+  </li>
+  {% endfor %}
+  <li class="nav-item" role="presentation">
+    <button class="nav-link"
+            id="tab-database"
+            data-bs-toggle="tab"
+            data-bs-target="#pane-database"
+            type="button" role="tab">
+      <i class="bi bi-database"></i> Database
+    </button>
+  </li>
+</ul>
+
+<div class="tab-content border border-top-0 rounded-bottom bg-white p-3 shadow-sm">
+  {% for cat, label in labels.items() %}
+  <div class="tab-pane fade {{ 'show active' if loop.first }}"
+       id="pane-{{ cat }}" role="tabpanel">
+
+    <table class="table table-sm small mb-3">
+      <thead>
+        <tr>
+          <th style="width:3rem;">Order</th>
+          <th>Value</th>
+          <th style="width:8rem;">Status</th>
+          <th style="width:10rem;">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set active_items = grouped[cat] | selectattr('is_active') | list %}
+        {% if active_items %}
+          {% for item in active_items %}
+          <tr>
+            <td class="text-muted">
+              <form method="POST" action="{{ url_for('settings.reorder_item', item_id=item.id) }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="direction" value="up">
+                <button class="btn btn-xs btn-link p-0 text-muted" title="Move up" {{ 'disabled' if loop.first }}>
+                  <i class="bi bi-chevron-up"></i>
+                </button>
+              </form>
+              <form method="POST" action="{{ url_for('settings.reorder_item', item_id=item.id) }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="direction" value="down">
+                <button class="btn btn-xs btn-link p-0 text-muted" title="Move down" {{ 'disabled' if loop.last }}>
+                  <i class="bi bi-chevron-down"></i>
+                </button>
+              </form>
+            </td>
+            <td class="fw-semibold align-middle">{{ item.value }}</td>
+            <td class="align-middle">
+              <span class="badge bg-success">Active</span>
+            </td>
+            <td class="align-middle">
+              <!-- Edit -->
+              <button class="btn btn-sm btn-outline-primary py-0 px-1"
+                      data-bs-toggle="modal"
+                      data-bs-target="#editModal"
+                      data-item-id="{{ item.id }}"
+                      data-item-value="{{ item.value }}"
+                      data-item-category="{{ cat }}"
+                      title="Edit">
+                <i class="bi bi-pencil"></i>
+              </button>
+              <!-- Delete (soft) -->
+              <form method="POST"
+                    action="{{ url_for('settings.delete_item', item_id=item.id) }}"
+                    class="d-inline"
+                    onsubmit="return confirm('Remove \'{{ item.value }}\' from the list?')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-1" title="Remove">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="4" class="text-muted fst-italic">No items yet — add one below.</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+
+    <!-- Add form -->
+    <form method="POST" action="{{ url_for('settings.add_item') }}" class="d-flex gap-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="category" value="{{ cat }}">
+      <div class="flex-grow-1">
+        <label class="form-label small fw-semibold mb-1">Add to {{ label }}</label>
+        <input type="text" name="value" class="form-control form-control-sm"
+               placeholder="New value…" required>
+      </div>
+      <button type="submit" class="btn btn-sm btn-primary mb-0">
+        <i class="bi bi-plus-lg"></i> Add
+      </button>
+    </form>
+
+  </div>
+  {% endfor %}
+
+  <!-- Database Tab -->
+  <div class="tab-pane fade" id="pane-database" role="tabpanel">
+
+    <!-- Download -->
+    <div class="mb-4">
+      <h6 class="fw-bold mb-1"><i class="bi bi-download text-primary"></i> Download Database</h6>
+      <p class="text-muted small mb-2">
+        Downloads the live SQLite database file. Use this to back up data or
+        migrate it to another instance.
+      </p>
+      <a href="{{ url_for('settings.db_download') }}" class="btn btn-sm btn-outline-primary">
+        <i class="bi bi-file-earmark-arrow-down"></i> Download .db file
+      </a>
+    </div>
+
+    <hr>
+
+    <!-- Import -->
+    <div>
+      <h6 class="fw-bold mb-1"><i class="bi bi-upload text-warning"></i> Import Database</h6>
+      <p class="text-muted small mb-2">
+        Replaces the current database with an uploaded <code>.db</code> file.
+        A timestamped backup of the existing database is saved automatically before
+        the replacement takes place.
+      </p>
+      <div class="alert alert-warning py-2 small mb-3">
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        <strong>This will overwrite all current data.</strong>
+        All users, risks, and audit records will be replaced by the contents of
+        the uploaded file. This cannot be undone except by re-importing the backup.
+      </div>
+      <form method="POST"
+            action="{{ url_for('settings.db_import') }}"
+            enctype="multipart/form-data"
+            onsubmit="return confirm('Replace the current database with the uploaded file? This cannot be undone.')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="d-flex gap-2 align-items-end">
+          <div>
+            <label class="form-label small fw-semibold mb-1">Select .db file</label>
+            <input type="file" name="db_file" class="form-control form-control-sm" accept=".db" required>
+          </div>
+          <button type="submit" class="btn btn-sm btn-warning">
+            <i class="bi bi-arrow-repeat"></i> Import & Replace
+          </button>
+        </div>
+      </form>
+    </div>
+
+  </div>
+
+</div>
+
+<!-- Edit Modal -->
+<div class="modal fade" id="editModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <form method="POST" id="editForm" action="">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="modal-header py-2">
+          <h6 class="modal-title fw-bold">Edit Value</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <input type="text" name="value" id="editValue" class="form-control form-control-sm" required>
+        </div>
+        <div class="modal-footer py-2">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-sm btn-primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Restore the active tab from the URL hash (set by the server after each save).
+(function () {
+  const hash = window.location.hash; // e.g. "#tab-threat_actor_type"
+  if (hash) {
+    const tabEl = document.querySelector(hash);
+    if (tabEl) bootstrap.Tab.getOrCreateInstance(tabEl).show();
+  }
+})();
+
+document.getElementById('editModal').addEventListener('show.bs.modal', function (e) {
+  const btn = e.relatedTarget;
+  document.getElementById('editForm').action = `/settings/lookup/${btn.dataset.itemId}/edit`;
+  document.getElementById('editValue').value = btn.dataset.itemValue;
+});
+</script>
+{% endblock %}

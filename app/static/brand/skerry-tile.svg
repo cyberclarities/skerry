@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" role="img" aria-label="Skerry">
+  <rect width="32" height="32" rx="6" fill="#1a2744"/><g transform="translate(16,16) scale(0.78) translate(-16,-16)">
+  <clipPath id="ud"><rect x="0" y="0" width="32" height="18.0"/></clipPath>
+  <clipPath id="dd"><rect x="0" y="18.0" width="32" height="14.0"/></clipPath>
+  <path d="M 14.32,27.64 L 6.48,16.44 L 15.44,6.36 L 25.52,15.32 L 19.92,25.40 Z" fill="#2e75b6" clip-path="url(#dd)"/>
+  <path d="M 14.32,27.64 L 6.48,16.44 L 15.44,6.36 L 25.52,15.32 L 19.92,25.40 Z" fill="#ffffff" clip-path="url(#ud)"/>
+  <path d="M 1.6,18.0 L 6.27,18.0" stroke="#2e75b6" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M 25.33,18.0 L 30.4,18.0" stroke="#2e75b6" stroke-width="2.4" stroke-linecap="round"/></g>
+</svg>

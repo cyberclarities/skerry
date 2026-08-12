@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}Decision / Acceptance Form — {{ risk.risk_id }} — Skerry{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('risks.list_risks') }}" class="text-muted text-decoration-none">The Chart</a>
+  &rsaquo; <a href="{{ url_for('risks.detail', risk_pk=risk.id) }}" class="text-muted text-decoration-none">{{ risk.risk_id }}</a>
+  &rsaquo; Decision / Acceptance Form
+{% endblock %}
+
+{% block content %}
+<h5 class="fw-bold mb-1">Generate Risk Decision / Acceptance Form — {{ risk.risk_id }}</h5>
+<p class="text-muted small mb-3">
+  Everything the register already knows about this risk — scores, controls, treatment, owner — is pulled in
+  automatically. The fields below are the handful of things that belong to <em>this</em> decision, not the risk
+  record, so they're not stored anywhere; review and edit them, then generate the .docx. It routes to the
+  Executive Core Team for a treatment decision and closes with a signature block for the risk owner — if the
+  selected treatment is <strong>Accept</strong>, that signature is the formal risk acceptance.
+</p>
+
+<form method="POST" action="{{ url_for('risks.decision_request', risk_pk=risk.id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  {% macro field(label, name, type="text", hint="", rows=2) %}
+  <div class="mb-3">
+    <label for="{{ name }}" class="form-label fw-semibold small mb-1">{{ label }}</label>
+    {% if type == "textarea" %}
+    <textarea class="form-control form-control-sm" id="{{ name }}" name="{{ name }}"
+              rows="{{ rows }}">{{ defaults.get(name, "") }}</textarea>
+    {% else %}
+    <input type="{{ type }}" class="form-control form-control-sm" id="{{ name }}" name="{{ name }}"
+           value="{{ defaults.get(name, "") }}">
+    {% endif %}
+    {% if hint %}<div class="form-text">{{ hint }}</div>{% endif %}
+  </div>
+  {% endmacro %}
+
+  <div class="row g-3">
+    <div class="col-lg-8">
+
+      <!-- Routing -->
+      <div class="card shadow-sm mb-3">
+        <div class="card-header py-2 small fw-semibold text-uppercase text-muted bg-primary text-white">Routing</div>
+        <div class="card-body">
+          <div class="row">
+            <div class="col-md-6">{{ field("Requestor name", "requestor_name") }}</div>
+            <div class="col-md-6">{{ field("Requestor role", "requestor_role") }}</div>
+          </div>
+          <div class="row">
+            <div class="col-md-6">{{ field("Executive owner requested", "executive_owner_requested", hint="e.g., CIO, COO, CEO, or Executive Core Team") }}</div>
+            <div class="col-md-6">{{ field("Decision needed by", "decision_needed_by", type="date") }}</div>
+          </div>
+          <div class="row">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small mb-1">Priority level</label>
+              <select class="form-select form-select-sm" name="priority_level">
+                {% for p in ["P1 — Immediate", "P2 — Within quarter", "P3 — Planned"] %}
+                <option value="{{ p }}" {{ "selected" if defaults.get("priority_level") == p }}>{{ p }}</option>
+                {% endfor %}
+              </select>
+              <div class="form-text">Suggested from current RAG status ({{ risk.rag_status }}) — adjust if needed.</div>
+            </div>
+            <div class="col-md-6">{{ field("Funding / resources requested", "funding_requested") }}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- The ask -->
+      <div class="card shadow-sm mb-3">
+        <div class="card-header py-2 small fw-semibold text-uppercase text-muted bg-primary text-white">The Ask</div>
+        <div class="card-body">
+          {{ field("1 Big Ask — one sentence", "big_ask", type="textarea", rows=2, hint="Auto-drafted from the risk's treatment and threat description — tighten before sending.") }}
+          {{ field("Why it matters — lead sentence", "why_it_matters_lead", type="textarea", rows=2) }}
+        </div>
+      </div>
+
+      <!-- Business impact -->
+      <div class="card shadow-sm mb-3">
+        <div class="card-header py-2 small fw-semibold text-uppercase text-muted bg-primary text-white">Business Impact</div>
+        <div class="card-body">
+          {{ field("Operations impact", "impact_operations", type="textarea", rows=2) }}
+          {{ field("Financial — cost-to-treat note", "impact_financial_note", hint="The register's min/max exposure range is pulled in automatically; add a cost-to-treat note here if useful.") }}
+          {{ field("Customers / stakeholders impact", "impact_customers", type="textarea", rows=2) }}
+          {{ field("Legal / regulatory / reputation", "impact_legal", type="textarea", rows=2, hint="Defaults to the risk's regulatory obligation field.") }}
+        </div>
+      </div>
+
+      <!-- RACI -->
+      <div class="card shadow-sm mb-3">
+        <div class="card-header py-2 small fw-semibold text-uppercase text-muted bg-primary text-white">RACI</div>
+        <div class="card-body">
+          <div class="row">
+            <div class="col-md-6">{{ field("Responsible", "raci_responsible", hint="Defaults to the risk's action owner.") }}</div>
+            <div class="col-md-6">{{ field("Accountable", "raci_accountable", hint="Executive who owns the decision outcome.") }}</div>
+          </div>
+          <div class="row">
+            <div class="col-md-6">{{ field("Consulted", "raci_consulted") }}</div>
+            <div class="col-md-6">{{ field("Informed", "raci_informed") }}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Go deeper -->
+      <div class="card shadow-sm mb-3">
+        <div class="card-header py-2 small fw-semibold text-uppercase text-muted bg-primary text-white">
+          Go Deeper — Additional Actions
+        </div>
+        <div class="card-body">
+          <p class="text-muted small">The risk's remediation action, owner, due date, and status fill row 1 automatically. Add up to two more if the plan has more moving parts.</p>
+          {% for n in [2, 3] %}
+          <div class="row g-2 mb-2 align-items-end">
+            <div class="col-md-5">{{ field("Action " ~ n, "action" ~ n ~ "_desc") }}</div>
+            <div class="col-md-3">{{ field("Owner", "action" ~ n ~ "_owner") }}</div>
+            <div class="col-md-2">{{ field("Due", "action" ~ n ~ "_due", type="date") }}</div>
+            <div class="col-md-2">{{ field("Status", "action" ~ n ~ "_status") }}</div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Assumptions -->
+      <div class="card shadow-sm mb-3">
+        <div class="card-header py-2 small fw-semibold text-uppercase text-muted bg-primary text-white">
+          Assumptions, Dependencies, Review Trigger
+        </div>
+        <div class="card-body">
+          {{ field("Assumptions", "assumptions", type="textarea", rows=2) }}
+          {{ field("Dependencies", "dependencies", type="textarea", rows=2) }}
+          {{ field("Review trigger", "review_trigger", type="textarea", rows=2) }}
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary">
+        <i class="bi bi-file-earmark-word"></i> Generate Decision Request (.docx)
+      </button>
+      <a href="{{ url_for('risks.detail', risk_pk=risk.id) }}" class="btn btn-outline-secondary">Cancel</a>
+    </div><!-- /col-lg-8 -->
+
+    <!-- Sidebar: what's auto-filled -->
+    <div class="col-lg-4">
+      <div class="card shadow-sm mb-3">
+        <div class="card-header py-2 small fw-semibold text-uppercase text-muted">Pulled from the Register</div>
+        <div class="card-body small">
+          <div class="mb-2"><span class="text-muted">Risk ID</span><br><strong>{{ risk.risk_id }}</strong></div>
+          <div class="mb-2"><span class="text-muted">Threat</span><br>{{ risk.threat_description or "—" }}</div>
+          <div class="mb-2"><span class="text-muted">Likelihood × Impact</span><br>
+            {{ risk.likelihood or "—" }}/5 ({{ likelihood_labels.get(risk.likelihood, "") }}) ×
+            {{ risk.impact or "—" }}/5 ({{ impact_labels.get(risk.impact, "") }})
+          </div>
+          <div class="mb-2"><span class="text-muted">Inherent / Residual</span><br>
+            {{ risk.inherent_risk_score or "—" }} / {{ risk.residual_risk_score or "—" }}
+            <span class="badge badge-rag-{{ risk.rag_status }}">{{ risk.rag_status }}</span>
+          </div>
+          <div class="mb-2"><span class="text-muted">Treatment (CISO recommendation)</span><br>{{ risk.treatment or "—" }}</div>
+          <div class="mb-2"><span class="text-muted">Risk Owner</span><br>{{ risk.risk_owner or "—" }}</div>
+          <div class="mb-0"><span class="text-muted">Exceeds risk appetite?</span><br>{{ "Yes" if risk.exceeds_risk_appetite else "No" }}</div>
+        </div>
+      </div>
+      <div class="alert alert-secondary small">
+        This step doesn't change the risk record. The generated document has a blank signature line for the risk
+        owner and a decision block for the Executive Core Team — print, sign, or route it however your process calls for.
+      </div>
+    </div>
+  </div>
+</form>
+{% endblock %}

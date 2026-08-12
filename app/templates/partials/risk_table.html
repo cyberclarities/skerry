@@ -1,0 +1,93 @@
+<div class="card shadow-sm">
+  <div class="card-body p-0">
+    <table class="table table-hover table-sm mb-0 small">
+      <thead>
+        <tr>
+          <th style="width:80px;">Risk ID</th>
+          <th>Category</th>
+          <th>Threat Description</th>
+          <th>Asset / System</th>
+          <th style="width:70px;">Inherent</th>
+          <th style="width:70px;">Residual</th>
+          <th style="width:70px;">RAG</th>
+          <th>Owner</th>
+          <th style="width:90px;">Due Date</th>
+          <th style="width:90px;">Status</th>
+          <th style="width:80px;">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in risks %}
+        <tr id="risk-row-{{ r.id }}" class="{{ 'table-danger' if r.is_overdue else '' }}">
+          <td>
+            <a href="{{ url_for('risks.detail', risk_pk=r.id) }}"
+               class="fw-semibold text-decoration-none">{{ r.risk_id }}</a>
+            {% if r.board_reporting_flag %}
+              <i class="bi bi-flag-fill text-primary ms-1" title="Board Escalation"></i>
+            {% endif %}
+          </td>
+          <td>{{ r.risk_category or "—" }}</td>
+          <td class="text-truncate" style="max-width:260px;" title="{{ r.threat_description }}">
+            {{ (r.threat_description or "—")[:90] }}
+          </td>
+          <td class="text-truncate" style="max-width:160px;">{{ r.asset_system or "—" }}</td>
+          <td class="text-center">{{ r.inherent_risk_score or "—" }}</td>
+          <td class="text-center fw-semibold">{{ r.residual_risk_score or "—" }}</td>
+          <td>
+            <span class="badge badge-rag-{{ r.rag_status }}">{{ r.rag_status }}</span>
+          </td>
+          <td>{{ r.risk_owner or "—" }}</td>
+          <td>
+            {% if r.due_date %}
+              <span class="{{ 'text-danger fw-semibold' if r.is_overdue }}">
+                {{ r.due_date.strftime('%Y-%m-%d') }}
+              </span>
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            <span class="badge {% if r.status == 'Open' %}bg-secondary{% elif r.status == 'In Progress' %}bg-primary{% elif r.status == 'Closed' %}bg-success{% else %}bg-dark{% endif %}">
+              {{ r.status }}
+            </span>
+          </td>
+          <td>
+            <a href="{{ url_for('risks.detail', risk_pk=r.id) }}"
+               class="btn btn-xs btn-outline-secondary btn-sm py-0 px-1" title="View">
+              <i class="bi bi-eye"></i>
+            </a>
+            {% if current_user.is_operator %}
+            <a href="{{ url_for('risks.edit_risk', risk_pk=r.id) }}"
+               class="btn btn-xs btn-outline-primary btn-sm py-0 px-1" title="Edit">
+              <i class="bi bi-pencil"></i>
+            </a>
+            {% endif %}
+            {% if current_user.is_admin %}
+            <button class="btn btn-xs btn-outline-danger btn-sm py-0 px-1" title="Delete"
+                    hx-post="{{ url_for('risks.delete_risk', risk_pk=r.id) }}"
+                    hx-confirm="Delete {{ r.risk_id }}? This cannot be undone."
+                    hx-target="#risk-row-{{ r.id }}"
+                    hx-swap="outerHTML"
+                    hx-headers='{"X-CSRFToken": "{{ csrf_token() }}"}'>
+              <i class="bi bi-trash"></i>
+            </button>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="11" class="text-center text-muted py-4">
+            No risks match your filters.
+            {% if current_user.is_operator %}
+            <a href="{{ url_for('risks.new_risk') }}">Add the first one.</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if risks %}
+  <div class="card-footer text-muted small py-2">
+    {{ risks | length }} risk{{ "s" if risks | length != 1 }} shown
+  </div>
+  {% endif %}
+</div>

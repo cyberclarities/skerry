@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Overdue Actions — Skerry{% endblock %}
+{% block breadcrumb %}Reports &rsaquo; Overdue Actions{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+  <h5 class="fw-bold mb-0">Overdue Actions Tracker</h5>
+</div>
+
+{% if risks %}
+<div class="alert alert-danger py-2 small">
+  <i class="bi bi-exclamation-triangle-fill"></i>
+  <strong>{{ risks | length }} action{{ "s" if risks | length != 1 }} overdue.</strong>
+  Risks without a closed or accepted status where the due date has passed.
+</div>
+{% endif %}
+
+<div class="card shadow-sm">
+  <div class="card-body p-0">
+    <table class="table table-hover table-sm small mb-0">
+      <thead>
+        <tr>
+          <th>Risk ID</th>
+          <th>Category</th>
+          <th>Threat (Summary)</th>
+          <th>Owner</th>
+          <th>Action Owner</th>
+          <th>Due Date</th>
+          <th>Days Overdue</th>
+          <th>RAG</th>
+          <th>Velocity</th>
+          <th>Status</th>
+          <th>Escalate To</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in risks %}
+        <tr>
+          <td>
+            <a href="{{ url_for('risks.detail', risk_pk=r.id) }}"
+               class="fw-semibold text-decoration-none text-danger">{{ r.risk_id }}</a>
+          </td>
+          <td>{{ r.risk_category or "—" }}</td>
+          <td class="text-truncate" style="max-width:220px;" title="{{ r.threat_description }}">
+            {{ (r.threat_description or "—")[:70] }}
+          </td>
+          <td>{{ r.risk_owner or "—" }}</td>
+          <td>{{ r.action_owner or "—" }}</td>
+          <td class="text-danger fw-semibold">
+            {{ r.due_date.strftime('%Y-%m-%d') if r.due_date else "—" }}
+          </td>
+          <td class="text-danger fw-bold">{{ r.days_overdue or "—" }}</td>
+          <td><span class="badge badge-rag-{{ r.rag_status }}">{{ r.rag_status }}</span></td>
+          <td>{{ r.risk_velocity or "—" }}</td>
+          <td>
+            <span class="badge bg-secondary">{{ r.status }}</span>
+          </td>
+          <td>{{ r.escalation_path or "—" }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="11" class="text-center text-muted py-4">
+            <i class="bi bi-check-circle text-success"></i> No overdue actions.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
