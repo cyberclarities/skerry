@@ -324,7 +324,7 @@ and are invisible to container image scanners. Track them separately.
 |---|---|
 | 2026-07-08 | Initial SBOM, v2.0 of the application. |
 | 2026-08-11 | Removed WeasyPrint and its Alpine runtime libraries (Pango, Cairo, GDK-PixBuf, HarfBuzz, Fontconfig, ttf-dejavu). Added docxtpl for the Decision / Acceptance Form export. |
-| 2026-08-11 | Version bump to 4.0 and rename to Skerry. Corrected three packages listed as dependencies that pip does not install (oauthlib, PyJWT, python-dateutil). Added the fifteen-package Flask-Limiter subtree, which was absent. Refreshed all transitive versions and licences from distribution metadata. |
+| 2026-08-11 | Version bump to 4.0 and rename to Skerry. Corrected three packages listed as dependencies that pip does not install (oauthlib, PyJWT, python-dateutil). Added the nine-package Flask-Limiter subtree, which was absent. Refreshed all transitive versions and licences from distribution metadata. |
 
 ---
 

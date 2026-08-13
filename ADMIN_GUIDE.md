@@ -877,7 +877,7 @@ Click **Choose File**, select the `.db` file exported in Step 12.2, and click **
 Before redirecting users to the new host, confirm:
 
 - Login works using credentials from the imported database (not the bootstrap admin)
-- The Chart shows existing risks with correct counts
+- Register shows existing risks with correct counts
 - User Management shows all expected accounts
 - Settings → Lookup Lists show your customized values
 - A report loads without errors

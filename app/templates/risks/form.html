@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ "Edit " + risk.risk_id if risk else "New Risk" }} — Skerry{% endblock %}
 {% block breadcrumb %}
-  <a href="{{ url_for('risks.list_risks') }}" class="text-muted text-decoration-none">The Chart</a>
+  <a href="{{ url_for('risks.list_risks') }}" class="text-muted text-decoration-none">Register</a>
   &rsaquo; {{ "Edit " + risk.risk_id if risk else "New Risk" }}
 {% endblock %}
 

@@ -7,7 +7,7 @@ services:
       - .env
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:${PORT:-5001}/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:${PORT:-5000}/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -15,11 +15,11 @@ services:
   caddy:
     image: caddy:alpine
     ports:
-      #- "80:80"
-      - "8443:443"
+      - "80:80"
+      - "443:443"
     environment:
       - SERVER_NAME=${SERVER_NAME:-skerry.example.com}
-      - PORT=${PORT:-5001}
+      - PORT=${PORT:-5000}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

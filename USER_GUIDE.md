@@ -19,7 +19,7 @@ You do not need a cybersecurity background to use this tool. The concepts are ex
 **Part 1 — All Users (Viewer and above)**
 1. [Logging In](#1-logging-in)
 2. [The Dashboard](#2-the-dashboard)
-3. [Browsing the Chart](#3-browsing-the-chart)
+3. [Browsing the Register](#3-browsing-the-register)
 4. [Reading a Risk Record](#4-reading-a-risk-record)
 5. [Reports](#5-reports)
 6. [Exporting Data](#6-exporting-data)
@@ -99,9 +99,9 @@ The five most recently updated risk records, with direct links. Useful for picki
 
 ---
 
-## 3. Browsing the Chart
+## 3. Browsing the Register
 
-Navigate to **The Chart** in the left sidebar.
+Navigate to **Register** in the left sidebar.
 
 The full register loads by default, sorted by Risk ID. You do not need to know a Risk ID to find what you are looking for.
 
@@ -226,7 +226,7 @@ For a single-risk document suitable for routing to leadership and signature, see
 
 ## 7. Creating a New Risk
 
-Navigate to **The Chart → New Risk** (button in the top-right corner). This option is visible to Operators and Admins.
+Navigate to **Register → New Risk** (button in the top-right corner). This option is visible to Operators and Admins.
 
 A Risk ID is assigned automatically using the configured prefix (`CR-001`, `CR-002`, etc.). You will see the next available ID displayed before you save.
 
