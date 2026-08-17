@@ -270,6 +270,62 @@
     </div>
     {% endif %}
 
+    <!-- Add Vulnerability Finding -->
+    {% if current_user.is_operator %}
+    <div class="card shadow-sm mb-3" id="vulnerabilities">
+      <div class="card-header py-2 small fw-semibold text-uppercase text-muted">
+        Add Vulnerability Finding
+        <span class="text-muted fw-normal text-lowercase">— feeds the Decision Request evidence table</span>
+      </div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('risks.add_vulnerability', risk_pk=risk.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="row g-2">
+            <div class="col-md-4">
+              <label class="form-label small mb-1">CVE / Finding ID</label>
+              <input type="text" name="cve_id" class="form-control form-control-sm" placeholder="CVE-2024-38202">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small mb-1">Severity (CVSS)</label>
+              <select name="severity" class="form-select form-select-sm">
+                <option value="">—</option>
+                {% for s in vuln_severities %}<option>{{ s }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small mb-1">ExPRT rating</label>
+              <select name="expert_rating" class="form-select form-select-sm">
+                <option value="">—</option>
+                {% for s in vuln_severities %}<option>{{ s }}</option>{% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="row g-2 mt-1">
+            <div class="col-md-6">
+              <label class="form-label small mb-1">Vulnerable product</label>
+              <input type="text" name="vulnerable_product" class="form-control form-control-sm" placeholder="Windows 10 22H2">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small mb-1">Date found</label>
+              <input type="date" name="date_found" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small mb-1">Status</label>
+              <select name="status" class="form-select form-select-sm">
+                {% for s in vuln_statuses %}<option {{ "selected" if s == "Open" }}>{{ s }}</option>{% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="mt-2">
+            <label class="form-label small mb-1">Remediation</label>
+            <input type="text" name="remediation" class="form-control form-control-sm" placeholder="Install Security Update KB5099539">
+          </div>
+          <button type="submit" class="btn btn-sm btn-outline-primary w-100 mt-2">Add Finding</button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+
     <!-- Add Trend Entry -->
     {% if current_user.is_operator %}
     <div class="card shadow-sm mb-3">
@@ -306,6 +362,51 @@
 
   </div><!-- /right col -->
 </div>
+
+<!-- Vulnerability Findings -->
+{% if vulnerability_findings %}
+<div class="card shadow-sm mb-3">
+  <div class="card-header py-2 small fw-semibold text-uppercase text-muted d-flex justify-content-between align-items-center">
+    <span>Vulnerability Findings</span>
+    <span class="text-lowercase fw-normal">
+      {{ risk.open_vuln_count }} open ({{ risk.high_vuln_count }} High){% if risk.oldest_vuln_days %} · oldest {{ risk.oldest_vuln_days }} days{% endif %}
+    </span>
+  </div>
+  <div class="card-body p-0">
+    <table class="table table-sm small mb-0">
+      <thead><tr>
+        <th>CVE / Finding ID</th><th>Severity</th><th>ExPRT</th><th>Product</th>
+        <th>Remediation</th><th>Days Open</th><th>Status</th>{% if current_user.is_operator %}<th></th>{% endif %}
+      </tr></thead>
+      <tbody>
+        {% for v in vulnerability_findings %}
+        <tr>
+          <td>{{ v.cve_id or "—" }}</td>
+          <td>
+            {% if v.severity %}<span class="badge {{ 'bg-danger' if v.severity in ['Critical','High'] else 'bg-warning text-dark' if v.severity == 'Medium' else 'bg-secondary' }}">{{ v.severity }}</span>
+            {% else %}—{% endif %}
+          </td>
+          <td>{{ v.expert_rating or "—" }}</td>
+          <td>{{ v.vulnerable_product or "—" }}</td>
+          <td>{{ v.remediation or "—" }}</td>
+          <td>{{ v.days_open if v.days_open is not none else "—" }}</td>
+          <td>{{ v.status or "—" }}</td>
+          {% if current_user.is_operator %}
+          <td>
+            <form method="POST" action="{{ url_for('risks.delete_vulnerability', risk_pk=risk.id, vuln_pk=v.id) }}"
+                  onsubmit="return confirm('Remove {{ v.cve_id or "this finding" }}?')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-trash"></i></button>
+            </form>
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
 
 <!-- Trend History -->
 {% if trend_entries %}

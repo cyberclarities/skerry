@@ -9,11 +9,13 @@
 {% block content %}
 <h5 class="fw-bold mb-1">Generate Risk Decision / Acceptance Form — {{ risk.risk_id }}</h5>
 <p class="text-muted small mb-3">
-  Everything the register already knows about this risk — scores, controls, treatment, owner — is pulled in
-  automatically. The fields below are the handful of things that belong to <em>this</em> decision, not the risk
-  record, so they're not stored anywhere; review and edit them, then generate the .docx. It routes to the
-  Executive Core Team for a treatment decision and closes with a signature block for the risk owner — if the
-  selected treatment is <strong>Accept</strong>, that signature is the formal risk acceptance.
+  Everything the register already knows about this risk — scores, controls, treatment, owner, vulnerability
+  findings — is pulled in automatically. The fields below are the handful of things that belong to <em>this</em>
+  decision, not the risk record, so they're not stored anywhere; review and edit them, then generate. This produces
+  <strong>two documents</strong>: a one-page Executive Summary for the Executive Core Team's decision, and a
+  Supporting Evidence document with the full risk mechanics, vulnerability detail, treatment options, and RACI
+  behind it. If the selected treatment is <strong>Accept</strong>, the risk owner's signature on either document is
+  the formal risk acceptance.
 </p>
 
 <form method="POST" action="{{ url_for('risks.decision_request', risk_pk=risk.id) }}">
@@ -67,8 +69,60 @@
       <div class="card shadow-sm mb-3">
         <div class="card-header py-2 small fw-semibold text-uppercase text-muted bg-primary text-white">The Ask</div>
         <div class="card-body">
-          {{ field("1 Big Ask — one sentence", "big_ask", type="textarea", rows=2, hint="Auto-drafted from the risk's treatment and threat description — tighten before sending.") }}
-          {{ field("Why it matters — lead sentence", "why_it_matters_lead", type="textarea", rows=2) }}
+          {{ field("Executive Summary subject line", "exec_subject", hint="Shown as \"" ~ risk.risk_id ~ " — <subject>\" at the top of the Executive Summary. Defaults to the business process / asset.") }}
+          {{ field("1a Big Ask — one sentence", "big_ask", type="textarea", rows=2, hint="Goes on the Supporting Evidence document. Auto-drafted from the risk's treatment and threat description — tighten before sending.") }}
+          {{ field("Executive Ask — the full paragraph", "executive_ask", type="textarea", rows=3, hint="Goes on the Executive Summary: the decision needed, the score, and the fallback if it isn't approved.") }}
+          <div class="row">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small mb-1">Suggested treatment direction</label>
+              <select class="form-select form-select-sm" name="suggested_treatment">
+                {% for t in ["Mitigate", "Accept", "Transfer", "Avoid"] %}
+                <option value="{{ t }}" {{ "selected" if defaults.get("suggested_treatment") == t }}>{{ t }}</option>
+                {% endfor %}
+              </select>
+              <div class="form-text">
+                Defaults to the register's treatment ({{ risk.treatment or "not set" }}). Set this differently if
+                you're recommending something other than what's on file — both documents will note the register
+                value as the current state and this as the suggested action.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Why this matters / recommended action -->
+      <div class="card shadow-sm mb-3">
+        <div class="card-header py-2 small fw-semibold text-uppercase text-muted bg-primary text-white">
+          Why This Matters / Recommended Action
+        </div>
+        <div class="card-body">
+          {{ field("Why This Matters — one bullet per line", "why_it_matters_bullets", type="textarea", rows=4, hint="Executive Summary bullets. One point per line.") }}
+          {{ field("Recommended Action — one bullet per line", "recommended_action_bullets", type="textarea", rows=4, hint="Executive Summary bullets. Defaults to the risk's remediation action.") }}
+        </div>
+      </div>
+
+      <!-- Option viability -->
+      <div class="card shadow-sm mb-3">
+        <div class="card-header py-2 small fw-semibold text-uppercase text-muted bg-primary text-white">
+          Avoid / Transfer Viability
+        </div>
+        <div class="card-body">
+          <p class="text-muted small">
+            Leave blank if Avoid or Transfer are live options for this risk. Fill in a reason to mark that option
+            "not viable" on both documents — the reason becomes the trade-off text on the Supporting Evidence table.
+          </p>
+          {{ field("Why Avoid isn't viable (leave blank if it is)", "avoid_not_viable_reason", type="textarea", rows=2) }}
+          {{ field("Why Transfer isn't viable (leave blank if it is)", "transfer_not_viable_reason", type="textarea", rows=2) }}
+        </div>
+      </div>
+
+      <!-- Risk narrative -->
+      <div class="card shadow-sm mb-3">
+        <div class="card-header py-2 small fw-semibold text-uppercase text-muted bg-primary text-white">
+          Risk Narrative
+        </div>
+        <div class="card-body">
+          {{ field("Narrative — separate paragraphs with a blank line", "risk_narrative", type="textarea", rows=6, hint="Goes on the Supporting Evidence document (Section 3). The one-time CISO write-up of how this risk came about and what's at stake — not a field the register otherwise tracks.") }}
         </div>
       </div>
 
@@ -129,7 +183,7 @@
       </div>
 
       <button type="submit" class="btn btn-primary">
-        <i class="bi bi-file-earmark-word"></i> Generate Decision Request (.docx)
+        <i class="bi bi-file-earmark-zip"></i> Generate Decision Request (.zip — 2 docx files)
       </button>
       <a href="{{ url_for('risks.detail', risk_pk=risk.id) }}" class="btn btn-outline-secondary">Cancel</a>
     </div><!-- /col-lg-8 -->
@@ -151,12 +205,18 @@
           </div>
           <div class="mb-2"><span class="text-muted">Treatment (CISO recommendation)</span><br>{{ risk.treatment or "—" }}</div>
           <div class="mb-2"><span class="text-muted">Risk Owner</span><br>{{ risk.risk_owner or "—" }}</div>
-          <div class="mb-0"><span class="text-muted">Exceeds risk appetite?</span><br>{{ "Yes" if risk.exceeds_risk_appetite else "No" }}</div>
+          <div class="mb-2"><span class="text-muted">Exceeds risk appetite?</span><br>{{ "Yes" if risk.exceeds_risk_appetite else "No" }}</div>
+          <div class="mb-0">
+            <span class="text-muted">Vulnerability findings</span><br>
+            {{ risk.open_vuln_count }} open ({{ risk.high_vuln_count }} High){% if risk.oldest_vuln_days %}, oldest {{ risk.oldest_vuln_days }} days{% endif %}
+            <a href="{{ url_for('risks.detail', risk_pk=risk.id) }}#vulnerabilities" class="d-block small">Manage findings on the risk record &rsaquo;</a>
+          </div>
         </div>
       </div>
       <div class="alert alert-secondary small">
-        This step doesn't change the risk record. The generated document has a blank signature line for the risk
-        owner and a decision block for the Executive Core Team — print, sign, or route it however your process calls for.
+        This step doesn't change the risk record — except that vulnerability findings you add on the risk detail
+        page are stored there, not here. Both generated documents have blank signature lines for the risk owner and
+        a decision block for the Executive Core Team — print, sign, or route them however your process calls for.
       </div>
     </div>
   </div>

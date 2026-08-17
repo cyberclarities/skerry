@@ -549,7 +549,7 @@ Common failure causes: wrong redirect URI in Azure, client secret expired or cop
 
 Three items, in order of priority:
 
-**The database** (`./data/risk_register.db`) — contains everything: all risks, users, audit trail, trend history, lookup list customizations, and NIST reference data. This is the only file that changes during normal operation.
+**The database** (`./data/risk_register.db`) — contains everything: all risks, vulnerability findings, users, audit trail, trend history, lookup list customizations, and NIST reference data. This is the only file that changes during normal operation.
 
 **The `.env` file** — contains your `SECRET_KEY`, SMTP credentials, and OIDC secrets. If you lose the `SECRET_KEY`, all existing user sessions are invalidated (users will need to log in again; no data is lost). Store `.env` separately from the database — in a secrets manager, a secure document store, or a separate backup location. Do not keep it only on the Docker host.
 

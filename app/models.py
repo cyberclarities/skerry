@@ -119,6 +119,9 @@ class Risk(db.Model):
     audit_log = db.relationship("AuditLog", backref="risk", lazy="dynamic",
                                 cascade="all, delete-orphan",
                                 order_by="AuditLog.timestamp.desc()")
+    vulnerability_findings = db.relationship("VulnerabilityFinding", backref="risk", lazy="dynamic",
+                                cascade="all, delete-orphan",
+                                order_by="VulnerabilityFinding.date_found")
 
     # ── Computed properties ──────────────────────────────────────────────────
     @property
@@ -179,6 +182,30 @@ class Risk(db.Model):
             return (date.today() - self.due_date).days
         return None
 
+    # ── Vulnerability findings (aggregate) ───────────────────────────────────
+    # Backs the "Vulnerabilities: N open (M High)" / "Oldest Open: D days"
+    # lines on the Decision Request exports. Open = anything not Remediated;
+    # days-open is computed from date_found, never stored, so it's never stale.
+    @property
+    def open_vulnerabilities(self):
+        return [v for v in self.vulnerability_findings if v.status != "Remediated"]
+
+    @property
+    def open_vuln_count(self):
+        return len(self.open_vulnerabilities)
+
+    @property
+    def high_vuln_count(self):
+        return len([v for v in self.open_vulnerabilities if v.severity == "High"])
+
+    @property
+    def oldest_vuln_days(self):
+        open_findings = self.open_vulnerabilities
+        if not open_findings:
+            return None
+        days = [v.days_open for v in open_findings if v.days_open is not None]
+        return max(days) if days else None
+
     def __repr__(self):
         return f"<Risk {self.risk_id}>"
 
@@ -209,6 +236,43 @@ class TrendLog(db.Model):
     control_test_result = db.Column(db.String(50))
     notes = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class VulnerabilityFinding(db.Model):
+    """One scanner finding (typically one CVE) tied to a Risk.
+
+    This is deliberately narrow — it exists to back the vulnerability
+    evidence table on the Decision Request exports (open/High counts, oldest
+    finding, the per-CVE remediation table) with real data instead of typed
+    or memorized numbers. It is not a general vulnerability management
+    system; it doesn't track rescans or close-out workflow beyond the
+    status field below.
+    """
+    __tablename__ = "vulnerability_findings"
+
+    id = db.Column(db.Integer, primary_key=True)
+    risk_id = db.Column(db.Integer, db.ForeignKey("risks.id"), nullable=False)
+
+    cve_id = db.Column(db.String(50))
+    severity = db.Column(db.String(20))          # Critical|High|Medium|Low
+    expert_rating = db.Column(db.String(20))      # e.g. Tenable ExPRT: Critical|High|Medium|Low
+    vulnerable_product = db.Column(db.String(255))
+    remediation = db.Column(db.Text)
+    date_found = db.Column(db.Date)                # days-open is computed from this, never stored
+    status = db.Column(db.String(50), default="Open")  # Open|Remediated
+
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    @property
+    def days_open(self):
+        """Days since found, as of today. Not tracked past remediation —
+        there's no closed_at field, so this reflects current age only."""
+        if not self.date_found:
+            return None
+        return (date.today() - self.date_found).days
+
+    def __repr__(self):
+        return f"<VulnerabilityFinding {self.cve_id} on risk {self.risk_id}>"
 
 
 class LookupItem(db.Model):

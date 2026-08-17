@@ -4,7 +4,7 @@ from flask import (Blueprint, render_template, redirect, url_for,
                    request, flash, abort, jsonify, send_file)
 from flask_login import login_required, current_user
 from sqlalchemy import or_
-from app.models import db, Risk, TrendLog, NISTCSFReference, LookupItem
+from app.models import db, Risk, TrendLog, VulnerabilityFinding, NISTCSFReference, LookupItem
 from app.decorators import operator_required, log_audit
 from app.scoring import LIKELIHOOD_LABELS, IMPACT_LABELS, CONTROL_EFFECTIVENESS_LABELS
 from app.decision_request import build_context, suggested_defaults
@@ -29,6 +29,8 @@ DETECTION_CAPABILITIES = ["Full", "Partial", "Minimal", "None"]
 TREATMENTS = ["Mitigate", "Accept", "Transfer", "Avoid"]
 STATUSES = ["Open", "In Progress", "Closed", "Accepted"]
 FREQUENCIES = ["Monthly", "Quarterly", "Annually"]
+VULN_SEVERITIES = ["Critical", "High", "Medium", "Low"]
+VULN_STATUSES = ["Open", "Remediated"]
 def _lookup(category):
     """Pull active lookup values for a given category from the database."""
     return [
@@ -164,11 +166,15 @@ def detail(risk_pk):
     risk = Risk.query.get_or_404(risk_pk)
     audit_entries = risk.audit_log.limit(50).all()
     trend_entries = risk.trend_entries.all()
+    vulnerability_findings = risk.vulnerability_findings.all()
     return render_template(
         "risks/detail.html",
         risk=risk,
         audit_entries=audit_entries,
         trend_entries=trend_entries,
+        vulnerability_findings=vulnerability_findings,
+        vuln_severities=VULN_SEVERITIES,
+        vuln_statuses=VULN_STATUSES,
         likelihood_labels=LIKELIHOOD_LABELS,
         impact_labels=IMPACT_LABELS,
         effectiveness_labels=CONTROL_EFFECTIVENESS_LABELS,
@@ -282,6 +288,53 @@ def add_trend(risk_pk):
     return redirect(url_for("risks.detail", risk_pk=risk.id))
 
 
+@risks_bp.route("/<int:risk_pk>/vulnerability", methods=["POST"])
+@operator_required
+def add_vulnerability(risk_pk):
+    """Add one vulnerability finding (typically one CVE) to a risk.
+
+    Backs the vulnerability evidence table and open/High/oldest-open counts
+    on the Decision Request exports — this is the source of that data, not
+    a field on the export form.
+    """
+    risk = Risk.query.get_or_404(risk_pk)
+
+    date_found_str = request.form.get("date_found", "").strip()
+    try:
+        date_found = date.fromisoformat(date_found_str) if date_found_str else None
+    except ValueError:
+        date_found = None
+
+    finding = VulnerabilityFinding(
+        risk_id=risk.id,
+        cve_id=request.form.get("cve_id", "").strip() or None,
+        severity=request.form.get("severity", "").strip() or None,
+        expert_rating=request.form.get("expert_rating", "").strip() or None,
+        vulnerable_product=request.form.get("vulnerable_product", "").strip() or None,
+        remediation=request.form.get("remediation", "").strip() or None,
+        date_found=date_found,
+        status=request.form.get("status", "Open").strip() or "Open",
+    )
+    db.session.add(finding)
+    log_audit(risk, current_user, "updated", {"vulnerability_finding": (None, finding.cve_id or "added")})
+    db.session.commit()
+    flash("Vulnerability finding added.", "success")
+    return redirect(url_for("risks.detail", risk_pk=risk.id))
+
+
+@risks_bp.route("/<int:risk_pk>/vulnerability/<int:vuln_pk>/delete", methods=["POST"])
+@operator_required
+def delete_vulnerability(risk_pk, vuln_pk):
+    risk = Risk.query.get_or_404(risk_pk)
+    finding = VulnerabilityFinding.query.filter_by(id=vuln_pk, risk_id=risk.id).first_or_404()
+    cve = finding.cve_id
+    db.session.delete(finding)
+    log_audit(risk, current_user, "updated", {"vulnerability_finding": (cve or "removed", None)})
+    db.session.commit()
+    flash("Vulnerability finding removed.", "success")
+    return redirect(url_for("risks.detail", risk_pk=risk.id))
+
+
 @risks_bp.route("/<int:risk_pk>/decision-request", methods=["GET", "POST"])
 @operator_required
 def decision_request(risk_pk):
@@ -297,24 +350,38 @@ def decision_request(risk_pk):
     if request.method == "POST":
         ctx = build_context(risk, request.form)
 
+        import os
+        import zipfile
         from docxtpl import DocxTemplate
         from flask import current_app
-        import os
-        template_path = os.path.join(
-            current_app.root_path, "templates", "exports", "risk_decision_request_template.docx"
-        )
-        tpl = DocxTemplate(template_path)
-        tpl.render(ctx)
 
-        out = io.BytesIO()
-        tpl.save(out)
-        out.seek(0)
-        filename = f"Risk_Decision_Request_{risk.risk_id}_{date.today().isoformat()}.docx"
+        exports_dir = os.path.join(current_app.root_path, "templates", "exports")
+        stamp = date.today().isoformat()
+
+        exec_summary = DocxTemplate(os.path.join(exports_dir, "risk_exec_summary_template.docx"))
+        exec_summary.render(ctx)
+        exec_out = io.BytesIO()
+        exec_summary.save(exec_out)
+        exec_name = f"{risk.risk_id}_Executive_Summary_Decision_Request_{stamp}.docx"
+
+        evidence = DocxTemplate(os.path.join(exports_dir, "risk_supporting_evidence_template.docx"))
+        evidence.render(ctx)
+        evidence_out = io.BytesIO()
+        evidence.save(evidence_out)
+        evidence_name = f"{risk.risk_id}_Supporting_Evidence_{stamp}.docx"
+
+        zip_out = io.BytesIO()
+        with zipfile.ZipFile(zip_out, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(exec_name, exec_out.getvalue())
+            zf.writestr(evidence_name, evidence_out.getvalue())
+        zip_out.seek(0)
+
+        filename = f"Risk_Decision_Request_{risk.risk_id}_{stamp}.zip"
         log_audit(risk, current_user, "exported", {"decision_request": (None, filename)})
         db.session.commit()
         return send_file(
-            out, download_name=filename, as_attachment=True,
-            mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            zip_out, download_name=filename, as_attachment=True,
+            mimetype="application/zip",
         )
 
     defaults = suggested_defaults(risk, current_user)

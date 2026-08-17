@@ -30,12 +30,13 @@ You do not need a cybersecurity background to use this tool. The concepts are ex
 9. [Understanding Risk Scoring](#9-understanding-risk-scoring)
 10. [NIST CSF 2.0 Mapping](#10-nist-csf-20-mapping)
 11. [Adding a Trend Log Entry](#11-adding-a-trend-log-entry)
+12. [Tracking Vulnerability Findings](#12-tracking-vulnerability-findings)
 
 **Part 3 — Admins Only**
-12. [User Management](#12-user-management)
-13. [Lookup Lists](#13-lookup-lists)
-14. [Accepting and Closing Risks](#14-accepting-and-closing-risks)
-15. [Database Backup and Restore](#15-database-backup-and-restore)
+13. [User Management](#13-user-management)
+14. [Lookup Lists](#14-lookup-lists)
+15. [Accepting and Closing Risks](#15-accepting-and-closing-risks)
+16. [Database Backup and Restore](#16-database-backup-and-restore)
 
 ---
 
@@ -416,9 +417,36 @@ The trend chart on the detail view plots these entries over time.
 
 ---
 
+## 12. Tracking Vulnerability Findings
+
+Vulnerability findings are individual scanner results — typically one CVE apiece — tied to a risk. This is deliberately narrow: it exists to give the Decision / Acceptance Form (§15) real numbers to report instead of typed-in ones, not to replace a vulnerability management platform. There's no rescan workflow beyond marking a finding Remediated.
+
+### Adding a Finding
+
+From the risk detail view, scroll to **Add Vulnerability Finding** and fill in:
+
+- **CVE / Finding ID** — the CVE number or scanner finding ID
+- **Severity (CVSS)** and **ExPRT rating** — your scanner's severity and, if it reports one, its exploit-prediction rating; these can differ and both are tracked
+- **Vulnerable product** — what the finding is against
+- **Date found** — when the finding first appeared; this is what "days open" is computed from, so back-date it to match the scanner if you're entering historical findings, not the date you happened to be entering data
+- **Remediation** — the fix, in scanner or vendor language
+- **Status** — Open or Remediated
+
+Click **Add Finding**. It appears in the **Vulnerability Findings** table below, along with a rolling count of open findings, how many are High severity, and the oldest open finding's age.
+
+### Removing a Finding
+
+Click the trash icon on any row. Do this when a finding was entered in error — for a finding that's actually been fixed, change its status to Remediated instead, so the register keeps a record that it existed.
+
+### Where This Shows Up
+
+The open/High counts and oldest-open figure feed the Executive Summary's Risk at a Glance table; the full list, with remediation and days open per finding, feeds the Supporting Evidence document's Vulnerability Evidence table (§15). Keep this list current before generating a Decision / Acceptance Form — that's the whole reason it's here.
+
+---
+
 # Part 3 — Admins Only
 
-## 12. User Management
+## 13. User Management
 
 Navigate to **Admin → User Management** in the left sidebar.
 
@@ -448,7 +476,7 @@ Minimum length is 12 characters. There is no self-service reset — an admin set
 
 ---
 
-## 13. Lookup Lists
+## 14. Lookup Lists
 
 Navigate to **Admin → Settings** in the left sidebar.
 
@@ -478,7 +506,7 @@ Use the up/down chevrons to control the order values appear in the dropdown.
 
 ---
 
-## 14. Accepting and Closing Risks
+## 15. Accepting and Closing Risks
 
 Accepting and closing risks are admin-only actions because they carry authority. They are not status changes — they are decisions.
 
@@ -503,11 +531,16 @@ Do not mark a risk as Accepted because no one got around to treating it. Accept 
 
 ### Generating a Decision / Acceptance Form
 
-Operators and admins can generate a routable `.docx` for any risk from the **Decision / Acceptance Form** button on the risk detail page. It is built to escalate a risk to leadership for a treatment decision, and to carry a signature — the risk owner's, and the Executive Core Team's if the treatment is Accept.
+Operators and admins can generate a routable decision packet for any risk from the **Decision / Acceptance Form** button on the risk detail page. It downloads as a `.zip` containing two documents, built to escalate a risk to leadership for a treatment decision and to carry a signature — the risk owner's, and the Executive Core Team's if the treatment is Accept:
 
-Everything the register already knows about the risk — scores, controls, treatment, owner, financial exposure, NIST CSF mapping — is pulled in automatically; nothing here is retyped. A short form asks for the handful of things that belong to that specific decision rather than to the risk record itself: who the request is routed to, the priority, the RACI, and a one-sentence "ask" (drafted for you from the risk's treatment and threat description, editable before you generate).
+- **Executive Summary Decision Request** — one page. A Risk at a Glance table, Why This Matters and Recommended Action bullets, a four-option decision block (Mitigate / Accept / Avoid / Transfer) with checkboxes, and two signature lines. This is what goes in front of the Executive Core Team.
+- **Supporting Evidence** — the full record behind that ask: risk narrative, business impact, risk mechanics, the vulnerability evidence table, treatment options with pros/trade-offs, RACI, and the risk owner sign-off block.
 
-Generating the form does not change the risk record or its status — it produces a document. If the Executive Core Team decides to accept the risk, come back and set Treatment to Accept and fill in the Acceptance Sign-Off fields above so the register and the signed document agree.
+Everything the register already knows about the risk — scores, controls, treatment, owner, financial exposure, NIST CSF mapping, and vulnerability findings (see §11a) — is pulled in automatically; nothing here is retyped. A form asks for the handful of things that belong to that specific decision rather than to the risk record itself: who the request is routed to, the priority, the RACI, a one-sentence "ask" for the Evidence document and a fuller Executive Ask paragraph for the Summary (both drafted for you, editable before you generate), the Why This Matters / Recommended Action bullets, and a risk narrative.
+
+If the register's stored Treatment differs from what you're actually recommending, set **Suggested treatment direction** on the form — both documents will show the register's value as the current state and your suggestion as the recommended action, rather than silently picking one. If Avoid or Transfer genuinely aren't options for this risk (a system that has to keep running, for instance), fill in why — that reason becomes the "not viable" language on both documents instead of a live checkbox.
+
+Generating the form does not change the risk record or its status — it produces documents. If the Executive Core Team decides to accept the risk, come back and set Treatment to Accept and fill in the Acceptance Sign-Off fields above so the register and the signed documents agree.
 
 ### Deleting a Risk
 
@@ -515,7 +548,7 @@ Click **Delete** on the risk detail page. This is a hard delete — the record, 
 
 ---
 
-## 15. Database Backup and Restore
+## 16. Database Backup and Restore
 
 Navigate to **Admin → Settings → Database** tab.
 
