@@ -1,0 +1,32 @@
+# Normalize line endings.
+# Git stores text files with LF in the repository and converts to the
+# platform's native ending on checkout. Keeps Windows and Linux clones
+# from showing every file as modified.
+* text=auto
+
+# Files that must keep LF regardless of platform — these run inside
+# containers or are read by shell/POSIX tooling.
+*.sh text eol=lf
+Dockerfile text eol=lf
+Caddyfile text eol=lf
+docker-compose.yml text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Windows-only scripts keep CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary — never touch.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.xlsx binary
+*.docx binary
+*.db binary
+*.sqlite binary
+*.sqlite3 binary
