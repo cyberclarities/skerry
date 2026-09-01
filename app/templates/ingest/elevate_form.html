@@ -1,0 +1,311 @@
+{% extends "base.html" %}
+{% block title %}Elevate to Risk · Skerry{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('ingest.index') }}">Spotlight Ingest</a> → Elevate to risk
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-3">
+  <div>
+    <h4 class="mb-1">Elevate to risk <span class="text-muted">{{ next_id }}</span></h4>
+    <p class="text-muted small mb-0">
+      {{ findings|length }} finding(s) · {{ proposal.host_names|length }} host(s) ·
+      {{ proposal.cves|length }} CVE(s) — {{ proposal.scope_label }}
+    </p>
+  </div>
+</div>
+
+{% if already %}
+<div class="alert alert-info py-2 small">
+  {{ already|length }} of the findings you selected are already on a risk. They have
+  been left out of this one.
+</div>
+{% endif %}
+
+<div class="card shadow-sm mb-3 border-primary">
+  <div class="card-header bg-white py-2">
+    <strong class="small">How these scores were suggested</strong>
+  </div>
+  <div class="card-body py-2">
+    <pre class="small mb-2" style="white-space:pre-wrap">{{ proposal.suggestion_rationale }}</pre>
+    <p class="small text-muted mb-0">
+      Source: CrowdStrike Falcon Spotlight (ExPRT.AI rating, exploit status, CVSS v3.1
+      base score) and Falcon asset metadata. CVSS severity bands follow FIRST CVSS
+      v3.1 specification section 5. CISA KEV listing per the CISA Known Exploited
+      Vulnerabilities catalog.
+    </p>
+  </div>
+</div>
+
+<form method="POST" action="{{ url_for('ingest.elevate') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {% for f in findings %}<input type="hidden" name="finding_ids" value="{{ f.id }}">{% endfor %}
+  <input type="hidden" name="scope_label" value="{{ proposal.scope_label }}">
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-header bg-white py-2"><strong class="small">Identification</strong></div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label class="form-label small">Risk category</label>
+          <select name="risk_category" class="form-select form-select-sm">
+            {% for c in risk_categories %}
+              <option value="{{ c }}" {{ 'selected' if c == proposal.risk_category }}>{{ c }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-8">
+          <label class="form-label small">Asset / system</label>
+          <input type="text" name="asset_system" class="form-control form-control-sm"
+                 value="{{ proposal.asset_system }}">
+        </div>
+        <div class="col-12">
+          <label class="form-label small">Business process</label>
+          <input type="text" name="business_process" class="form-control form-control-sm"
+                 placeholder="What does this host actually do for the business? Scanner data cannot tell you.">
+          <div class="form-text small">
+            The one field Spotlight cannot fill. Leave it blank and the exec summary
+            reads like a scan report instead of a business risk.
+          </div>
+        </div>
+        <div class="col-12">
+          <label class="form-label small">Threat description</label>
+          <textarea name="threat_description" rows="4"
+                    class="form-control form-control-sm">{{ proposal.threat_description }}</textarea>
+        </div>
+        <div class="col-12">
+          <label class="form-label small">Vulnerability detail</label>
+          <textarea name="vulnerability_detail" rows="8"
+                    class="form-control form-control-sm font-monospace"
+                    style="font-size:.8rem">{{ proposal.vulnerability_detail }}</textarea>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small">Threat actor type</label>
+          <select name="threat_actor_type" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for a in threat_actors %}<option value="{{ a }}">{{ a }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small">Attack vector</label>
+          <select name="attack_vector" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for a in attack_vectors %}<option value="{{ a }}">{{ a }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small">Threat intel source</label>
+          <input type="text" name="threat_intel_source" class="form-control form-control-sm"
+                 value="{{ proposal.threat_intel_source }}">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-header bg-white py-2"><strong class="small">Scoring — your numbers, not the scanner's</strong></div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label class="form-label small">Likelihood</label>
+          <select name="likelihood" class="form-select form-select-sm">
+            <option value="">— not set —</option>
+            {% for n, label in likelihood_labels.items() %}
+              <option value="{{ n }}" {{ 'selected' if n == proposal.suggested_likelihood }}>
+                {{ n }} — {{ label }}</option>
+            {% endfor %}
+          </select>
+          {% if proposal.suggested_likelihood %}
+          <div class="form-text small">Suggested: {{ proposal.suggested_likelihood }}</div>
+          {% endif %}
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small">Impact</label>
+          <select name="impact" class="form-select form-select-sm">
+            <option value="">— not set —</option>
+            {% for n, label in impact_labels.items() %}
+              <option value="{{ n }}" {{ 'selected' if n == proposal.suggested_impact }}>
+                {{ n }} — {{ label }}</option>
+            {% endfor %}
+          </select>
+          {% if proposal.suggested_impact %}
+          <div class="form-text small">Suggested: {{ proposal.suggested_impact }}</div>
+          {% endif %}
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small">Control effectiveness</label>
+          <select name="control_effectiveness" class="form-select form-select-sm">
+            <option value="">— not assessed —</option>
+            {% for n, label in effectiveness_labels.items() %}
+              <option value="{{ n }}">{{ n }} — {{ label }}</option>
+            {% endfor %}
+          </select>
+          <div class="form-text small">
+            Left blank on purpose. A control you have not tested is not a control you can claim.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-header bg-white py-2"><strong class="small">Controls, ownership and treatment</strong></div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-12">
+          <label class="form-label small">Existing controls</label>
+          <textarea name="existing_controls" rows="2" class="form-control form-control-sm"
+                    placeholder="EDR, network segmentation, WAF, patch cadence — and whether each has been tested."></textarea>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small">Control type</label>
+          <select name="control_type" class="form-select form-select-sm">
+            {% for c in control_types %}
+              <option value="{{ c }}" {{ 'selected' if c == proposal.control_type }}>{{ c }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small">Assurance source</label>
+          <input type="text" name="assurance_source" class="form-control form-control-sm"
+                 value="{{ proposal.assurance_source }}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small">Risk velocity</label>
+          <select name="risk_velocity" class="form-select form-select-sm">
+            {% for v in velocities %}
+              <option value="{{ v }}" {{ 'selected' if v == proposal.risk_velocity }}>{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small">Detection capability</label>
+          <select name="detection_capability" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for d in ['Full','Partial','Minimal','None'] %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small">Risk owner</label>
+          <select name="risk_owner" class="form-select form-select-sm">
+            <option value="">—</option>
+            {% for o in risk_owners %}<option value="{{ o }}">{{ o }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small">Action owner</label>
+          <input type="text" name="action_owner" class="form-control form-control-sm">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small">Due date</label>
+          <input type="date" name="due_date" class="form-control form-control-sm">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small">Treatment</label>
+          <select name="treatment" class="form-select form-select-sm">
+            {% for t in treatments %}
+              <option value="{{ t }}" {{ 'selected' if t == proposal.treatment }}>{{ t }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small">Status</label>
+          <select name="status" class="form-select form-select-sm">
+            {% for s in statuses %}
+              <option value="{{ s }}" {{ 'selected' if s == proposal.status }}>{{ s }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small">Review frequency</label>
+          <select name="review_frequency" class="form-select form-select-sm">
+            {% for f in ['Monthly','Quarterly','Annually'] %}
+              <option value="{{ f }}" {{ 'selected' if f == 'Monthly' }}>{{ f }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3 d-flex align-items-end">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="board_reporting_flag" id="board">
+            <label class="form-check-label small" for="board">Board reportable</label>
+          </div>
+        </div>
+        <div class="col-12">
+          <label class="form-label small">Remediation action</label>
+          <textarea name="remediation_action" rows="4"
+                    class="form-control form-control-sm">{{ proposal.remediation_action }}</textarea>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small">NIST CSF 2.0 subcategory</label>
+          <select name="nist_csf_subcategory" id="csf-sub" class="form-select form-select-sm">
+            {% for code, desc, cat, fn in nist_subcategories %}
+              <option value="{{ code }}" data-cat="{{ cat }}" data-fn="{{ fn }}"
+                      {{ 'selected' if code == proposal.nist_csf_subcategory }}>
+                {{ code }} — {{ desc|truncate(70) }}</option>
+            {% endfor %}
+          </select>
+          <input type="hidden" name="nist_csf_function" id="csf-fn" value="{{ proposal.nist_csf_function }}">
+          <input type="hidden" name="nist_csf_category" id="csf-cat" value="{{ proposal.nist_csf_category }}">
+          <div class="form-text small">Defaults to ID.RA-01 — vulnerabilities in assets are identified and recorded.</div>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small">Evidence links</label>
+          <textarea name="evidence_links" rows="3"
+                    class="form-control form-control-sm">{{ proposal.evidence_links }}</textarea>
+        </div>
+        <div class="col-12">
+          <label class="form-label small">Notes</label>
+          <textarea name="notes_history" rows="2" class="form-control form-control-sm"
+                    placeholder="Anything the scanner data does not say."></textarea>
+          <div class="form-text small">
+            The ingest provenance and the score rationale above are appended automatically.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-header bg-white py-2">
+      <strong class="small">Findings that will be copied onto this risk ({{ findings|length }})</strong>
+    </div>
+    <div class="table-responsive" style="max-height:300px;overflow-y:auto">
+      <table class="table table-sm mb-0 small">
+        <thead><tr><th>Host</th><th>CVE</th><th>Severity</th><th>ExPRT</th><th>Found</th></tr></thead>
+        <tbody>
+        {% for f in findings %}
+          <tr>
+            <td>{{ f.hostname or f.aid }}</td>
+            <td>{{ f.cve_id }}</td>
+            <td>{{ f.severity_title or '—' }}</td>
+            <td>{{ f.exprt_title or '—' }}</td>
+            <td>{{ f.date_found or '—' }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="d-flex justify-content-between mb-4">
+    <a href="{{ url_for('ingest.index') }}" class="btn btn-outline-secondary">Cancel</a>
+    <button type="submit" class="btn btn-primary">
+      <i class="bi bi-shield-plus"></i> Create {{ next_id }}
+    </button>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Keep the hidden CSF function/category in step with the chosen subcategory.
+  var sub = document.getElementById('csf-sub');
+  function syncCsf() {
+    var opt = sub.options[sub.selectedIndex];
+    document.getElementById('csf-fn').value = opt.dataset.fn || '';
+    document.getElementById('csf-cat').value = opt.dataset.cat || '';
+  }
+  sub?.addEventListener('change', syncCsf);
+  if (sub) { syncCsf(); }
+</script>
+{% endblock %}

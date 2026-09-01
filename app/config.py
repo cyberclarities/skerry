@@ -45,6 +45,32 @@ class Config:
     RISK_APPETITE_THRESHOLD = int(os.environ.get("RISK_APPETITE_THRESHOLD", 8))
     RISK_ID_PREFIX = os.environ.get("RISK_ID_PREFIX", "SKR")
 
+    # -- CrowdStrike Falcon Spotlight ingest ---------------------------------
+    # The API client should carry ONE scope: Spotlight vulnerabilities: READ.
+    # Nothing in this integration writes back to CrowdStrike, so a key with
+    # more than read on one service is more key than the job needs.
+    FALCON_CLIENT_ID = os.environ.get("FALCON_CLIENT_ID", "")
+    FALCON_CLIENT_SECRET = os.environ.get("FALCON_CLIENT_SECRET", "")
+    # us-1 | us-2 | eu-1 | us-gov-1 | us-gov-2. The wrong region returns 401
+    # with a perfectly valid key, so this is explicit rather than guessed.
+    FALCON_CLOUD_REGION = os.environ.get("FALCON_CLOUD_REGION", "us-1")
+    FALCON_BASE_URL = os.environ.get("FALCON_BASE_URL", "")  # overrides region
+    FALCON_HTTP_TIMEOUT = int(os.environ.get("FALCON_HTTP_TIMEOUT", 60))
+
+    # The Spotlight API requires an FQL filter -- there is no "everything"
+    # query. Default pulls currently-open findings that are not suppressed.
+    # Widen or narrow this per tenant; a 40,000-host estate should probably
+    # add cve.severity or host_info.asset_criticality to keep the queue
+    # something a person can actually work.
+    SPOTLIGHT_FQL_FILTER = os.environ.get(
+        "SPOTLIGHT_FQL_FILTER",
+        "status:'open',status:'reopen'",
+    )
+    SPOTLIGHT_PAGE_SIZE = int(os.environ.get("SPOTLIGHT_PAGE_SIZE", 400))
+    SPOTLIGHT_SYNC_ENABLED = _flag("SPOTLIGHT_SYNC_ENABLED", "false")
+    SPOTLIGHT_SYNC_HOUR = int(os.environ.get("SPOTLIGHT_SYNC_HOUR", 5))
+    SPOTLIGHT_SYNC_MINUTE = int(os.environ.get("SPOTLIGHT_SYNC_MINUTE", 30))
+
     # SMTP
     SMTP_HOST = os.environ.get("SMTP_HOST", "")
     SMTP_PORT = int(os.environ.get("SMTP_PORT", 587))

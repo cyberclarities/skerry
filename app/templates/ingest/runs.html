@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}Spotlight Sync · Skerry{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('ingest.index') }}">Spotlight Ingest</a> → Sync history
+{% endblock %}
+
+{% block content %}
+<h4 class="mb-3">Spotlight sync</h4>
+
+{% if not configured %}
+<div class="alert alert-warning">
+  <strong>Falcon API credentials are not configured.</strong>
+  Set <code>FALCON_CLIENT_ID</code> and <code>FALCON_CLIENT_SECRET</code> in your
+  <code>.env</code> and restart. The key needs <em>Spotlight vulnerabilities: READ</em>
+  and nothing more.
+</div>
+{% endif %}
+
+<div class="card shadow-sm mb-3">
+  <div class="card-body">
+    <div class="row small mb-3">
+      <div class="col-md-3"><span class="text-muted">Cloud region:</span> {{ region }}</div>
+      <div class="col-md-3">
+        <span class="text-muted">Scheduled sync:</span>
+        {% if schedule_enabled %}
+          daily at {{ '%02d'|format(schedule_hour) }}:00 server time
+        {% else %}
+          <span class="text-danger">disabled</span>
+        {% endif %}
+      </div>
+      <div class="col-md-6"><span class="text-muted">Default filter:</span>
+        <code class="small">{{ default_filter }}</code></div>
+    </div>
+
+    <form method="POST" action="{{ url_for('ingest.sync') }}" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-md-8">
+        <label class="form-label small text-muted mb-1">FQL filter (blank uses the default)</label>
+        <input type="text" name="fql_filter" class="form-control form-control-sm"
+               placeholder="{{ default_filter }}">
+      </div>
+      <div class="col-md-4 text-md-end">
+        <button type="button" id="test-btn" class="btn btn-sm btn-outline-secondary">Test connection</button>
+        <button type="submit" class="btn btn-sm btn-primary" {{ 'disabled' if not configured }}>
+          <i class="bi bi-arrow-repeat"></i> Run sync now
+        </button>
+      </div>
+    </form>
+    <div id="test-result" class="small mt-2"></div>
+    <p class="small text-muted mt-2 mb-0">
+      A manual sync runs in the request. On a large tenant this takes minutes —
+      leave the tab open. The scheduled run is the normal path.
+    </p>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+    <strong class="small">Sync history</strong>
+    <form method="POST" action="{{ url_for('ingest.reconcile') }}" class="m-0">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-sm btn-outline-secondary">
+        Reconcile remediated findings
+      </button>
+    </form>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm mb-0 align-middle">
+      <thead>
+        <tr>
+          <th>Started (UTC)</th><th>Trigger</th><th>Status</th>
+          <th class="text-center">Fetched</th><th class="text-center">New</th>
+          <th class="text-center">Updated</th><th class="text-center">Closed</th>
+          <th class="text-center">Skipped</th><th class="text-center">Seconds</th><th>By</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for r in runs %}
+        <tr>
+          <td class="small">{{ r.started_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td class="small">{{ r.trigger }}</td>
+          <td>
+            <span class="badge {{ {'success':'bg-success','failed':'bg-danger','running':'bg-secondary'}.get(r.status,'bg-light text-dark') }}">
+              {{ r.status }}</span>
+            {% if r.error_message %}
+              <div class="small text-danger">{{ r.error_message|truncate(120) }}</div>
+            {% endif %}
+          </td>
+          <td class="text-center">{{ r.records_fetched }}</td>
+          <td class="text-center">{{ r.findings_created }}</td>
+          <td class="text-center">{{ r.findings_updated }}</td>
+          <td class="text-center">{{ r.findings_closed }}</td>
+          <td class="text-center {{ 'text-danger fw-semibold' if r.parse_errors }}">{{ r.parse_errors }}</td>
+          <td class="text-center small">{{ r.duration_seconds or '—' }}</td>
+          <td class="small">{{ r.run_by.name if r.run_by else 'scheduler' }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="10" class="text-center text-muted py-3">No sync has run yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-header bg-white py-2"><strong class="small">Recent elevations</strong></div>
+  <div class="table-responsive">
+    <table class="table table-sm mb-0 align-middle">
+      <thead>
+        <tr><th>Date</th><th>Risk</th><th>Scope</th><th class="text-center">Hosts</th>
+            <th class="text-center">Findings</th><th class="text-center">Suggested L×I</th><th>By</th></tr>
+      </thead>
+      <tbody>
+      {% for e in elevations %}
+        <tr>
+          <td class="small">{{ e.created_at.strftime('%Y-%m-%d') }}</td>
+          <td>
+            {% if e.risk %}
+              <a href="{{ url_for('risks.detail', risk_pk=e.risk_id) }}">{{ e.risk_ref }}</a>
+            {% else %}
+              <span class="text-muted" title="Risk record has since been deleted">{{ e.risk_ref }} (deleted)</span>
+            {% endif %}
+          </td>
+          <td class="small">{{ e.scope_label }}</td>
+          <td class="text-center">{{ e.host_count }}</td>
+          <td class="text-center">{{ e.finding_count }}</td>
+          <td class="text-center small">
+            {{ e.suggested_likelihood or '—' }} × {{ e.suggested_impact or '—' }}
+          </td>
+          <td class="small">{{ e.created_by.name if e.created_by else '—' }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7" class="text-center text-muted py-3">Nothing elevated yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.getElementById('test-btn')?.addEventListener('click', function () {
+    var out = document.getElementById('test-result');
+    out.textContent = 'Testing…';
+    fetch('{{ url_for("ingest.test_connection") }}', {
+      method: 'POST',
+      headers: {'X-CSRFToken': '{{ csrf_token() }}'}
+    }).then(function (r) { return r.json(); })
+      .then(function (d) {
+        out.className = 'small mt-2 ' + (d.ok ? 'text-success' : 'text-danger');
+        out.textContent = d.message;
+      })
+      .catch(function (e) {
+        out.className = 'small mt-2 text-danger';
+        out.textContent = 'Request failed: ' + e;
+      });
+  });
+</script>
+{% endblock %}

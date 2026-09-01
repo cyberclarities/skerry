@@ -162,6 +162,10 @@
       <i class="bi bi-shield-exclamation"></i> Register
     </a>
 
+    <a href="{{ url_for('ingest.index') }}" class="{{ 'active' if request.blueprint == 'ingest' }}">
+      <i class="bi bi-radar"></i> Spotlight Ingest
+    </a>
+
     <div class="nav-section">Reports</div>
     <a href="{{ url_for('reports.overdue') }}" class="{{ 'active' if request.endpoint == 'reports.overdue' }}">
       <i class="bi bi-clock-history"></i> Overdue Actions
@@ -185,6 +189,9 @@
     </a>
     <a href="{{ url_for('settings.manage') }}" class="{{ 'active' if request.blueprint == 'settings' }}">
       <i class="bi bi-sliders"></i> Settings
+    </a>
+    <a href="{{ url_for('ingest.runs') }}" class="{{ 'active' if request.endpoint == 'ingest.runs' }}">
+      <i class="bi bi-arrow-repeat"></i> Spotlight Sync
     </a>
     {% endif %}
   </nav>

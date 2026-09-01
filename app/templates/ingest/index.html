@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% import "ingest/_badges.html" as b %}
+{% block title %}Spotlight Ingest · Skerry{% endblock %}
+{% block breadcrumb %}Spotlight Ingest → Hosts{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="mb-0">Spotlight Ingest</h4>
+    <p class="text-muted small mb-0">
+      Scanner findings waiting on a decision. Nothing here is a risk until someone makes it one.
+    </p>
+  </div>
+  <div>
+    <a href="{{ url_for('ingest.findings', **request.args) }}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-list-ul"></i> Finding view
+    </a>
+  </div>
+</div>
+
+{% include "ingest/_kpis.html" %}
+{% include "ingest/_filters.html" %}
+
+{% if not rows %}
+  <div class="alert alert-light border">No findings match these filters.</div>
+{% else %}
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0 align-middle">
+      <thead>
+        <tr>
+          <th>Host</th>
+          <th>Type</th>
+          <th class="text-center">Findings</th>
+          <th class="text-center">Critical</th>
+          <th class="text-center">High</th>
+          <th class="text-center">KEV</th>
+          <th class="text-center">Max CVSS</th>
+          <th class="text-center">Oldest</th>
+          <th>Exposure</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td>
+            <a href="{{ url_for('ingest.host_detail', aid=r.aid) }}" class="fw-semibold text-decoration-none">
+              {{ r.hostname }}</a>
+            {% if r.criticality %}<div class="small text-muted">{{ r.criticality }} criticality</div>{% endif %}
+          </td>
+          <td class="small text-muted">{{ r.product_type or '—' }}</td>
+          <td class="text-center">{{ r.count }}</td>
+          <td class="text-center">{{ r.critical or '' }}</td>
+          <td class="text-center">{{ r.high or '' }}</td>
+          <td class="text-center">
+            {% if r.kev %}<span class="badge bg-danger">{{ r.kev }}</span>{% endif %}
+          </td>
+          <td class="text-center">{{ '%.1f'|format(r.max_cvss) if r.max_cvss else '—' }}</td>
+          <td class="text-center">
+            {% if r.oldest_days is not none %}
+              <span class="{{ 'text-danger fw-semibold' if r.oldest_days > 90 }}">{{ r.oldest_days }}d</span>
+            {% else %}—{% endif %}
+          </td>
+          <td class="small">
+            {% if r.internet and r.internet|lower == 'yes' %}
+              <span class="badge bg-danger">Internet-facing</span>
+            {% else %}<span class="text-muted">{{ r.internet or '—' }}</span>{% endif %}
+          </td>
+          <td class="text-end">
+            <a href="{{ url_for('ingest.host_detail', aid=r.aid) }}" class="btn btn-sm btn-outline-primary">
+              Review</a>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<p class="small text-muted mt-2">
+  {{ rows|length }} host(s) shown, ordered by KEV count, then worst severity, then highest CVSS.
+</p>
+{% endif %}
+{% endblock %}

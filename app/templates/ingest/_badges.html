@@ -1,0 +1,16 @@
+{% macro severity(value) %}
+  {% set v = (value or '')|upper %}
+  <span class="badge {{ {'CRITICAL':'bg-danger','HIGH':'bg-warning text-dark','MEDIUM':'bg-info text-dark','LOW':'bg-secondary'}.get(v,'bg-light text-dark') }}">
+    {{ v|capitalize or '—' }}</span>
+{% endmacro %}
+
+{% macro state(value) %}
+  <span class="badge {{ {'New':'bg-danger','Triaged':'bg-warning text-dark','Elevated':'bg-success','Dismissed':'bg-secondary'}.get(value,'bg-light text-dark') }}">
+    {{ value }}</span>
+{% endmacro %}
+
+{% macro kev(finding) %}
+  {% if finding.is_cisa_kev %}
+    <span class="badge bg-danger" title="Listed in the CISA Known Exploited Vulnerabilities catalog">KEV</span>
+  {% endif %}
+{% endmacro %}

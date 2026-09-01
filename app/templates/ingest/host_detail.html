@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% import "ingest/_badges.html" as b %}
+{% block title %}{{ host.display_name }} · Spotlight Ingest{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('ingest.index') }}">Spotlight Ingest</a> → {{ host.display_name }}
+{% endblock %}
+
+{% block content %}
+<div class="row g-3 mb-3">
+  <div class="col-lg-8">
+    <h4 class="mb-1">{{ host.display_name }}</h4>
+    <p class="text-muted small mb-0">
+      {{ host.platform or '—' }} · {{ host.product_type_desc or '—' }} ·
+      {{ host.os_version or 'OS unknown' }}
+      {% if host.local_ip %} · {{ host.local_ip }}{% endif %}
+    </p>
+  </div>
+  <div class="col-lg-4 text-lg-end">
+    {% if host.internet_exposure and host.internet_exposure|lower == 'yes' %}
+      <span class="badge bg-danger">Internet-facing</span>
+    {% endif %}
+    {% if host.asset_criticality %}
+      <span class="badge bg-dark">{{ host.asset_criticality }} criticality</span>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card shadow-sm mb-3">
+  <div class="card-body py-2 small">
+    <div class="row">
+      <div class="col-md-3"><span class="text-muted">Agent ID:</span> <code>{{ host.aid }}</code></div>
+      <div class="col-md-3"><span class="text-muted">Domain:</span> {{ host.machine_domain or '—' }}</div>
+      <div class="col-md-3"><span class="text-muted">Site / OU:</span> {{ host.site_name or '—' }} / {{ host.ou or '—' }}</div>
+      <div class="col-md-3"><span class="text-muted">Last seen:</span>
+        {{ host.last_seen.strftime('%Y-%m-%d') if host.last_seen else '—' }}</div>
+    </div>
+    {% if host.host_groups %}
+    <div class="mt-1"><span class="text-muted">Falcon groups:</span> {{ host.host_groups }}</div>
+    {% endif %}
+  </div>
+</div>
+
+{% if elevations %}
+<div class="alert alert-success py-2 small">
+  This host already appears on
+  {% for e in elevations %}
+    <a href="{{ url_for('risks.detail', risk_pk=e.risk_id) if e.risk else '#' }}">{{ e.risk_ref }}</a>
+    ({{ e.finding_count }} finding(s), {{ e.created_at.strftime('%Y-%m-%d') }}){{ ", " if not loop.last }}
+  {% endfor %}.
+</div>
+{% endif %}
+
+{% include "ingest/_filters.html" %}
+
+{% if proposal %}
+<div class="card shadow-sm mb-3 border-primary">
+  <div class="card-body py-2">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <div class="small">
+        <strong>Suggested score for this host:</strong>
+        likelihood {{ proposal.suggested_likelihood or '—' }} ×
+        impact {{ proposal.suggested_impact or '—' }}
+        {% if proposal.suggested_likelihood and proposal.suggested_impact %}
+          = inherent {{ proposal.suggested_likelihood * proposal.suggested_impact }}
+        {% endif %}
+        <a class="ms-2" data-bs-toggle="collapse" href="#rationale" role="button">Why?</a>
+      </div>
+    </div>
+    <div class="collapse mt-2" id="rationale">
+      <pre class="small bg-light p-2 mb-0" style="white-space:pre-wrap">{{ proposal.suggestion_rationale }}</pre>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<form method="POST">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="back" value="{{ request.full_path }}">
+
+  <div class="card shadow-sm mb-3">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0 align-middle">
+        <thead>
+          <tr>
+            <th style="width:2rem"><input type="checkbox" id="check-all" class="form-check-input"></th>
+            <th>CVE</th>
+            <th>Product</th>
+            <th class="text-center">CVSS</th>
+            <th class="text-center">Severity</th>
+            <th class="text-center">ExPRT</th>
+            <th class="text-center">Exploit status</th>
+            <th class="text-center">Open</th>
+            <th>Remediation</th>
+            <th class="text-center">State</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for f in findings %}
+          <tr>
+            <td><input type="checkbox" name="finding_ids" value="{{ f.id }}"
+                       class="form-check-input row-check"
+                       {{ 'disabled' if f.elevation_id }} checked></td>
+            <td>
+              <a href="{{ url_for('ingest.cve_detail', cve_id=f.cve_id) }}"
+                 class="text-decoration-none">{{ f.cve_id or '—' }}</a> {{ b.kev(f) }}
+            </td>
+            <td class="small text-muted">{{ (f.product_name_version or '—')|truncate(50) }}</td>
+            <td class="text-center">{{ f.cve_base_score or '—' }}</td>
+            <td class="text-center">{{ b.severity(f.cve_severity) }}</td>
+            <td class="text-center small">{{ f.exprt_title or '—' }}</td>
+            <td class="text-center small">{{ f.exploit_status_label }}</td>
+            <td class="text-center">
+              {% if f.days_open is not none %}
+                <span class="{{ 'text-danger fw-semibold' if f.days_open > 90 }}">{{ f.days_open }}d</span>
+              {% else %}—{% endif %}
+            </td>
+            <td class="small text-muted">{{ (f.remediation_title or '—')|truncate(60) }}</td>
+            <td class="text-center">
+              {{ b.state(f.ingest_state) }}
+              {% if f.ingest_state == 'Dismissed' and f.dismissed_reason %}
+                <div class="small text-muted" title="{{ f.dismissed_reason }}">
+                  {{ f.dismissed_reason|truncate(30) }}</div>
+              {% endif %}
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="10" class="text-center text-muted py-3">No findings match these filters.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {% if current_user.is_operator and findings %}
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <div class="row g-2 align-items-end">
+        <div class="col-md-5">
+          <label class="form-label small text-muted mb-1">Reason (required to dismiss)</label>
+          <input type="text" name="reason" class="form-control form-control-sm">
+        </div>
+        <div class="col-md-7 text-md-end">
+          <button type="submit" formaction="{{ url_for('ingest.elevate') }}"
+                  class="btn btn-sm btn-primary">
+            <i class="bi bi-arrow-up-circle"></i> Elevate selected to a risk
+          </button>
+          <button type="submit" formaction="{{ url_for('ingest.triage') }}" name="action" value="triage"
+                  class="btn btn-sm btn-outline-secondary">Mark triaged</button>
+          <button type="submit" formaction="{{ url_for('ingest.triage') }}" name="action" value="dismiss"
+                  class="btn btn-sm btn-outline-danger">Dismiss</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.getElementById('check-all')?.addEventListener('change', function (e) {
+    document.querySelectorAll('.row-check:not([disabled])')
+      .forEach(function (cb) { cb.checked = e.target.checked; });
+  });
+</script>
+{% endblock %}

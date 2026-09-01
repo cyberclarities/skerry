@@ -1,0 +1,116 @@
+{
+  "resources": [
+    {
+      "id": "abc123def456_CVE-2024-21412_1",
+      "cid": "cid0001",
+      "aid": "abc123def456",
+      "created_timestamp": "2026-04-02T09:14:00Z",
+      "updated_timestamp": "2026-08-30T02:00:00Z",
+      "status": "open",
+      "apps": [
+        {
+          "product_name_version": "Microsoft Windows Server 2019 10.0.17763",
+          "sub_status": "open",
+          "remediation": {"ids": ["rem-9001"]},
+          "evaluation_logic": {"id": "eval-1"}
+        }
+      ],
+      "suppression_info": {"is_suppressed": false},
+      "cve": {
+        "id": "CVE-2024-21412",
+        "base_score": 8.1,
+        "severity": "HIGH",
+        "exprt_rating": "CRITICAL",
+        "exploit_status": 90,
+        "remediation_level": "O",
+        "vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:H/A:H",
+        "published_date": "2026-02-13T00:00:00Z",
+        "description": "Internet Shortcut Files security feature bypass vulnerability.",
+        "cisa_info": {"is_cisa_kev": true, "due_date": "2026-03-05T00:00:00Z"}
+      },
+      "host_info": {
+        "hostname": "SKY-DC01",
+        "local_ip": "10.20.4.11",
+        "machine_domain": "corp.example.org",
+        "os_version": "Windows Server 2019",
+        "platform": "Windows",
+        "product_type_desc": "Domain Controller",
+        "site_name": "HQ",
+        "ou": ["Domain Controllers"],
+        "system_manufacturer": "Dell Inc.",
+        "tags": ["tier0", "patch-window-sat"],
+        "groups": [{"id": "g1", "name": "Production Servers"}],
+        "asset_criticality": "Critical",
+        "internet_exposure": "No",
+        "first_seen_timestamp": "2024-01-10T12:00:00Z",
+        "last_seen_timestamp": "2026-08-31T22:10:00Z"
+      },
+      "remediation": {
+        "entities": [
+          {
+            "id": "rem-9001",
+            "reference": "KB5034768",
+            "title": "Update Windows Server 2019 to build 17763.5458",
+            "action": "Install security update KB5034768.",
+            "link": "https://catalog.update.microsoft.com/KB5034768"
+          }
+        ]
+      }
+    },
+    {
+      "id": "abc123def456_CVE-2023-44487_1",
+      "aid": "abc123def456",
+      "created_timestamp": "2026-01-15T09:00:00Z",
+      "updated_timestamp": "2026-08-30T02:00:00Z",
+      "status": "open",
+      "apps": [{"product_name_version": "nginx 1.24.0", "remediation": {"ids": ["rem-7"]}}],
+      "suppression_info": {"is_suppressed": false},
+      "cve": {
+        "id": "CVE-2023-44487",
+        "base_score": 7.5,
+        "severity": "HIGH",
+        "exprt_rating": "HIGH",
+        "exploit_status": 60,
+        "cisa_info": {"is_cisa_kev": false}
+      },
+      "host_info": {"hostname": "SKY-DC01", "platform": "Windows",
+                    "product_type_desc": "Domain Controller",
+                    "asset_criticality": "Critical", "internet_exposure": "No"},
+      "remediation": {"entities": [{"id": "rem-7", "title": "Upgrade nginx to 1.25.3",
+                                    "action": "Upgrade package.", "link": "https://nginx.org/"}]}
+    },
+    {
+      "id": "ffff9999_CVE-2024-21412_1",
+      "aid": "ffff9999",
+      "created_timestamp": "2026-06-20T11:00:00Z",
+      "status": "open",
+      "apps": [{"product_name_version": "Microsoft Windows 11 10.0.22631"}],
+      "cve": {
+        "id": "CVE-2024-21412", "base_score": 8.1, "severity": "HIGH",
+        "exprt_rating": "CRITICAL", "exploit_status": 90,
+        "cisa_info": {"is_cisa_kev": true}
+      },
+      "host_info": {"hostname": "SKY-LT-0042", "platform": "Windows",
+                    "product_type_desc": "Workstation", "internet_exposure": "No"}
+    },
+    {
+      "id": "beef0001_CVE-2021-44228_1",
+      "aid": "beef0001",
+      "created_timestamp": "2025-11-01T08:00:00Z",
+      "closed_timestamp": "2026-07-01T08:00:00Z",
+      "status": "closed",
+      "apps": [{"product_name_version": "Apache Log4j 2.14.1"}],
+      "cve": {"id": "CVE-2021-44228", "base_score": 10.0, "severity": "CRITICAL",
+              "exprt_rating": "CRITICAL", "exploit_status": 90,
+              "cisa_info": {"is_cisa_kev": true}},
+      "host_info": {"hostname": "SKY-APP07", "platform": "Linux",
+                    "product_type_desc": "Server", "internet_exposure": "Yes"}
+    },
+    {
+      "id": "nohost_malformed_1",
+      "cve": {"id": "CVE-2020-0001"}
+    }
+  ],
+  "meta": {"pagination": {"after": null, "total": 5}},
+  "errors": []
+}

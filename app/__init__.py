@@ -6,6 +6,10 @@ from flask_wtf.csrf import CSRFProtect
 from .config import Config, PLACEHOLDER_SECRETS
 from .extensions import limiter
 from .models import db, User
+# Imported for its side effect: registering the Spotlight ingest tables on
+# the same metadata, so db.create_all() below creates them. Additive only --
+# no existing table is altered. See app/models_spotlight.py.
+from . import models_spotlight  # noqa: F401
 
 login_manager = LoginManager()
 csrf = CSRFProtect()
@@ -52,6 +56,7 @@ def create_app(config_class=Config):
     from .routes.report_routes import reports_bp
     from .routes.export_routes import exports_bp
     from .routes.settings_routes import settings_bp
+    from .routes.ingest_routes import ingest_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(risks_bp)
@@ -60,6 +65,7 @@ def create_app(config_class=Config):
     app.register_blueprint(reports_bp)
     app.register_blueprint(exports_bp)
     app.register_blueprint(settings_bp)
+    app.register_blueprint(ingest_bp)
 
     # Security headers on every response
     @app.after_request
@@ -104,8 +110,8 @@ def create_app(config_class=Config):
         seed_admin(db, User, app)
         seed_lookup_defaults(db, LookupItem)
 
-    # Background scheduler for email notifications
-    if app.config.get("SMTP_HOST"):
+    # Background scheduler for email notifications and the Spotlight pull
+    if app.config.get("SMTP_HOST") or app.config.get("SPOTLIGHT_SYNC_ENABLED"):
         _start_scheduler(app)
 
     # Template globals
@@ -133,20 +139,55 @@ def _setup_oidc(app):
 
 
 def _start_scheduler(app):
+    """Background jobs: daily notification email, nightly Spotlight pull.
+
+    Each job is added only when its own config says so, so enabling the
+    Spotlight sync does not switch on notification email as a side effect,
+    and a deployment with neither configured starts no scheduler at all.
+    """
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
-        from .email_utils import run_daily_notifications
 
         scheduler = BackgroundScheduler()
-        scheduler.add_job(
-            func=run_daily_notifications,
-            args=[app],
-            trigger="cron",
-            hour=7,
-            minute=0,
-            id="daily_notifications",
-            replace_existing=True,
-        )
+
+        if app.config.get("SMTP_HOST"):
+            from .email_utils import run_daily_notifications
+            scheduler.add_job(
+                func=run_daily_notifications,
+                args=[app],
+                trigger="cron",
+                hour=7,
+                minute=0,
+                id="daily_notifications",
+                replace_existing=True,
+            )
+
+        if app.config.get("SPOTLIGHT_SYNC_ENABLED"):
+            from .spotlight.ingest import run_sync_job
+            scheduler.add_job(
+                func=run_sync_job,
+                args=[app],
+                trigger="cron",
+                hour=int(app.config.get("SPOTLIGHT_SYNC_HOUR", 5)),
+                minute=int(app.config.get("SPOTLIGHT_SYNC_MINUTE", 30)),
+                id="spotlight_sync",
+                replace_existing=True,
+                # A pull against a large tenant can outlast its own window.
+                # Skip the next fire rather than stacking two syncs writing
+                # the same rows.
+                max_instances=1,
+                coalesce=True,
+                misfire_grace_time=3600,
+            )
+            app.logger.info(
+                "Spotlight sync scheduled daily at %02d:%02d",
+                app.config.get("SPOTLIGHT_SYNC_HOUR", 5),
+                app.config.get("SPOTLIGHT_SYNC_MINUTE", 30),
+            )
+
+        if not scheduler.get_jobs():
+            return
+
         scheduler.start()
         import atexit
         atexit.register(lambda: scheduler.shutdown())

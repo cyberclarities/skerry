@@ -1,0 +1,37 @@
+{# Queue counters. "New" is the number that matters -- findings nobody has looked at. #}
+<div class="row g-3 mb-3">
+  {% set cards = [
+    ('New', totals.new, 'bi-inbox', 'text-danger'),
+    ('Triaged', totals.triaged, 'bi-eye', 'text-warning'),
+    ('CISA KEV open', totals.kev, 'bi-fire', 'text-danger'),
+    ('Hosts affected', totals.hosts, 'bi-hdd-network', 'text-primary'),
+    ('Elevated to risk', totals.elevated, 'bi-shield-check', 'text-success'),
+    ('Dismissed', totals.dismissed, 'bi-slash-circle', 'text-muted'),
+  ] %}
+  {% for label, value, icon, colour in cards %}
+  <div class="col-6 col-md-2">
+    <div class="card kpi-card shadow-sm h-100">
+      <div class="card-body py-3">
+        <div class="kpi-value {{ colour }}">{{ value }}</div>
+        <div class="kpi-label"><i class="bi {{ icon }}"></i> {{ label }}</div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% if last_run %}
+<p class="small text-muted">
+  Last sync {{ last_run.started_at.strftime('%Y-%m-%d %H:%M') }} UTC —
+  <span class="{{ 'text-success' if last_run.status == 'success' else 'text-danger' }}">
+    {{ last_run.status }}</span>,
+  {{ last_run.records_fetched }} record(s) fetched
+  {%- if last_run.parse_errors %}, {{ last_run.parse_errors }} skipped{% endif %}.
+  {% if current_user.is_admin %}<a href="{{ url_for('ingest.runs') }}">Sync history</a>{% endif %}
+</p>
+{% else %}
+<div class="alert alert-warning py-2 small">
+  No Spotlight sync has run yet. Nothing below is current until one has.
+  {% if current_user.is_admin %}<a href="{{ url_for('ingest.runs') }}">Run one now</a>.{% endif %}
+</div>
+{% endif %}

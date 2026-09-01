@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% import "ingest/_badges.html" as b %}
+{% block title %}{{ cve_id }} · Spotlight Ingest{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('ingest.index') }}">Spotlight Ingest</a> → {{ cve_id }}
+{% endblock %}
+
+{% block content %}
+<h4 class="mb-1">{{ cve_id }} {{ b.kev(sample) }}</h4>
+<p class="text-muted small">
+  CVSS {{ sample.cve_base_score or '—' }} ·
+  Severity {{ sample.severity_title or '—' }} ·
+  ExPRT.AI {{ sample.exprt_title or '—' }} ·
+  Exploit status {{ sample.exploit_status_label }} ·
+  Affecting {{ findings|length }} host(s)
+</p>
+
+{% if sample.cve_description %}
+<div class="card shadow-sm mb-3">
+  <div class="card-body small">{{ sample.cve_description }}</div>
+</div>
+{% endif %}
+
+{% if sample.is_cisa_kev %}
+<div class="alert alert-danger py-2 small mb-3">
+  Listed in the CISA Known Exploited Vulnerabilities catalog{% if sample.cisa_due_date %},
+  federal remediation due {{ sample.cisa_due_date }}{% endif %}. Exploitation of this
+  CVE has been observed, not theorised.
+</div>
+{% endif %}
+
+{% if proposal %}
+<div class="card shadow-sm mb-3 border-primary">
+  <div class="card-body py-2 small">
+    <strong>Suggested score across all {{ findings|length }} host(s):</strong>
+    likelihood {{ proposal.suggested_likelihood or '—' }} ×
+    impact {{ proposal.suggested_impact or '—' }}
+    <a class="ms-2" data-bs-toggle="collapse" href="#rationale" role="button">Why?</a>
+    <div class="collapse mt-2" id="rationale">
+      <pre class="small bg-light p-2 mb-0" style="white-space:pre-wrap">{{ proposal.suggestion_rationale }}</pre>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% include "ingest/_filters.html" %}
+
+<form method="POST">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="back" value="{{ request.full_path }}">
+
+  <div class="card shadow-sm mb-3">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0 align-middle">
+        <thead>
+          <tr>
+            <th style="width:2rem"><input type="checkbox" id="check-all" class="form-check-input" checked></th>
+            <th>Host</th>
+            <th>Type</th>
+            <th>Product</th>
+            <th class="text-center">Open</th>
+            <th class="text-center">State</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for f in findings %}
+          <tr>
+            <td><input type="checkbox" name="finding_ids" value="{{ f.id }}"
+                       class="form-check-input row-check"
+                       {{ 'disabled' if f.elevation_id }} checked></td>
+            <td><a href="{{ url_for('ingest.host_detail', aid=f.aid) }}"
+                   class="text-decoration-none">{{ f.hostname or f.aid }}</a></td>
+            <td class="small text-muted">{{ f.host.product_type_desc if f.host else '—' }}</td>
+            <td class="small text-muted">{{ (f.product_name_version or '—')|truncate(50) }}</td>
+            <td class="text-center">{{ f.days_open if f.days_open is not none else '—' }}d</td>
+            <td class="text-center">{{ b.state(f.ingest_state) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {% if current_user.is_operator %}
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <div class="row g-2 align-items-end">
+        <div class="col-md-5">
+          <label class="form-label small text-muted mb-1">Reason (required to dismiss)</label>
+          <input type="text" name="reason" class="form-control form-control-sm">
+        </div>
+        <div class="col-md-7 text-md-end">
+          <button type="submit" formaction="{{ url_for('ingest.elevate') }}"
+                  class="btn btn-sm btn-primary">
+            <i class="bi bi-arrow-up-circle"></i> Elevate all selected hosts as one risk
+          </button>
+          <button type="submit" formaction="{{ url_for('ingest.triage') }}" name="action" value="triage"
+                  class="btn btn-sm btn-outline-secondary">Mark triaged</button>
+          <button type="submit" formaction="{{ url_for('ingest.triage') }}" name="action" value="dismiss"
+                  class="btn btn-sm btn-outline-danger">Dismiss</button>
+        </div>
+      </div>
+      <p class="small text-muted mb-0 mt-2">
+        This is the path for a widely-discovered issue: one CVE, many hosts, one risk.
+      </p>
+    </div>
+  </div>
+  {% endif %}
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.getElementById('check-all')?.addEventListener('change', function (e) {
+    document.querySelectorAll('.row-check:not([disabled])')
+      .forEach(function (cb) { cb.checked = e.target.checked; });
+  });
+</script>
+{% endblock %}
