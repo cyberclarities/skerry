@@ -1,0 +1,39 @@
+# Secrets. Never commit. See .env.example for the template.
+.env
+.env.*
+!.env.example
+
+# Runtime data — the SQLite database and anything else the app writes.
+data/*
+!data/.gitkeep
+instance/
+*.db
+*.sqlite
+*.sqlite3
+
+# Generated documents
+*.xlsx
+*.docx
+!scripts/templates/*.docx
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Caddy / container local state
+caddy_data/
+caddy_config/
+
+# Editor and OS junk
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
