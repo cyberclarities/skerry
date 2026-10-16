@@ -157,7 +157,7 @@ def suggested_defaults(risk, current_user):
     # with conditions) if the recommended direction isn't approved.
     exec_subject = (risk.business_process or risk.asset_system or "this system").strip()
     exec_ask = (
-        f"The Executive Core Team must decide"
+        "The Executive Core Team must decide"
         + (f" by {due.isoformat()}" if due else "")
         + f" how to treat a {risk.rag_status} residual risk"
         + (f" ({risk.residual_risk_score})" if risk.residual_risk_score is not None else "")

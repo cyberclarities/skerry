@@ -55,7 +55,7 @@
             {% if u.id != current_user.id %}
             <form method="POST" action="{{ url_for('users.delete_user', user_id=u.id) }}"
                   class="d-inline"
-                  onsubmit="return confirm('Deactivate {{ u.name }}?')">
+                  data-confirm="Deactivate {{ u.name }}?">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn btn-xs btn-outline-danger btn-sm py-0 px-1" title="Deactivate">
                 <i class="bi bi-person-dash"></i>

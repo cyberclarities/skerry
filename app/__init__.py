@@ -46,7 +46,17 @@ def create_app(config_class=Config):
 
     @login_manager.user_loader
     def load_user(user_id):
-        return db.session.get(User, int(user_id))
+        # user_id is "<id>:<stamp>" (see User.get_id). A cookie from before a
+        # password change carries the old stamp and is refused. Bare ids from
+        # before this format existed are refused too: one forced sign-in.
+        import hmac
+        uid, _, stamp = str(user_id).partition(":")
+        if not uid.isdigit() or not stamp:
+            return None
+        user = db.session.get(User, int(uid))
+        if user is None or not hmac.compare_digest(stamp, user.session_stamp()):
+            return None
+        return user
 
     # Blueprints
     from .routes.auth_routes import auth_bp

@@ -3,7 +3,7 @@
 {% block breadcrumb %}Dashboard{% endblock %}
 
 {% block head %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.js" integrity="sha384-G436+Z2nlA8+PNoeRvWdxKbvOf8E/y+lYxqht2iBwNHTQDV5CJr3+AGVj8fGZi5t" crossorigin="anonymous"></script>
 {% endblock %}
 
 {% block content %}
@@ -53,14 +53,14 @@
             <div class="d-flex gap-1 mb-1 align-items-center">
               <span class="text-muted small me-1" style="width:1.2rem;">{{ impact }}</span>
               {% for likelihood in [1,2,3,4,5] %}
-                {% set count = heat_map.get((likelihood, impact), 0) %}
+                {% set cell = heat_map.get((likelihood, impact), {}) %}
                 {% set score = likelihood * impact %}
-                {% if score >= 15 %}{% set cls = "heat-5" %}
-                {% elif score >= 9 %}{% set cls = "heat-3" %}
-                {% elif count > 0 %}{% set cls = "heat-1" %}
-                {% else %}{% set cls = "heat-0" %}{% endif %}
-              <div class="heat-cell {{ cls }}" title="L={{ likelihood }} I={{ impact }} Score={{ score }}">
-                {{ count if count > 0 else "" }}
+                {% if score >= rag_red %}{% set zone = "RED" %}
+                {% elif score >= rag_amber %}{% set zone = "AMBER" %}
+                {% else %}{% set zone = "GREEN" %}{% endif %}
+              <div class="heat-cell heat-zone-{{ zone }}"
+                   title="Likelihood {{ likelihood }} x Impact {{ impact }} = {{ score }} ({{ zone }} zone){% for rag in ['RED','AMBER','GREEN','UNKNOWN'] %}{% if cell.get(rag) %}; {{ cell[rag] }} rated {{ rag }}{% endif %}{% endfor %}">
+                {% for rag in ['RED','AMBER','GREEN','UNKNOWN'] %}{% if cell.get(rag) %}<span class="heat-chip heat-chip-{{ rag }}">{{ cell[rag] }}</span>{% endif %}{% endfor %}
               </div>
               {% endfor %}
             </div>
@@ -74,11 +74,23 @@
             <div class="text-center text-muted small mt-1">Likelihood →</div>
           </div>
         </div>
-        <div class="d-flex gap-3 mt-2 small">
-          <span><span class="badge" style="background:#dc3545;">&nbsp;</span> RED ≥15</span>
-          <span><span class="badge" style="background:#fd7e14;">&nbsp;</span> AMBER 9–14</span>
-          <span><span class="badge" style="background:#d4edda; color:#155724;">&nbsp;</span> GREEN ≤8</span>
+        <div class="small text-muted mt-2">
+          Cell shading is the likelihood &times; impact score before controls:
+          <span class="heat-key heat-zone-RED"></span> {{ rag_red }}+
+          <span class="heat-key heat-zone-AMBER ms-2"></span> {{ rag_amber }}&ndash;{{ rag_red - 1 }}
+          <span class="heat-key heat-zone-GREEN ms-2"></span> under {{ rag_amber }}.
         </div>
+        <div class="small text-muted mt-1">
+          Numbers are open risks in that cell (closed risks are not shown), colored by their current rating after controls:
+          <span class="heat-chip heat-chip-RED">n</span>
+          <span class="heat-chip heat-chip-AMBER">n</span>
+          <span class="heat-chip heat-chip-GREEN">n</span>
+        </div>
+        {% if heat_unplotted %}
+        <div class="small text-muted mt-1">
+          {{ heat_unplotted }} risk{{ "s" if heat_unplotted != 1 }} not shown: likelihood or impact not set.
+        </div>
+        {% endif %}
       </div>
     </div>
   </div>

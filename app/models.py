@@ -1,7 +1,10 @@
+import hashlib
 from datetime import date, datetime, timezone
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
+
+from . import scoring
 
 db = SQLAlchemy()
 
@@ -26,6 +29,19 @@ class User(UserMixin, db.Model):
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
+
+    def session_stamp(self):
+        """A short fingerprint of the current password hash.
+
+        Folded into get_id(), which Flask-Login stores in the session and
+        remember cookies. Changing the password changes the stamp, so every
+        session and remember cookie issued before the change stops loading.
+        The cookie carries a hash of the hash, never the hash itself.
+        """
+        return hashlib.sha256((self.password_hash or "").encode()).hexdigest()[:16]
+
+    def get_id(self):
+        return f"{self.id}:{self.session_stamp()}"
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
@@ -113,56 +129,48 @@ class Risk(db.Model):
     updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     created_by_id = db.Column(db.Integer, db.ForeignKey("users.id"))
 
+    # History is not deleted with the risk. passive_deletes="all" tells
+    # SQLAlchemy to leave these rows alone when a risk is deleted, rather than
+    # deleting them (the old cascade) or nulling their risk_id (the default,
+    # which would fail on the NOT NULL column). delete_risk moves them to a
+    # tombstone key first; see risk_routes._retire_history for why.
     trend_entries = db.relationship("TrendLog", backref="risk", lazy="dynamic",
-                                    cascade="all, delete-orphan",
+                                    passive_deletes="all",
                                     order_by="TrendLog.review_date")
     audit_log = db.relationship("AuditLog", backref="risk", lazy="dynamic",
-                                cascade="all, delete-orphan",
+                                passive_deletes="all",
                                 order_by="AuditLog.timestamp.desc()")
     vulnerability_findings = db.relationship("VulnerabilityFinding", backref="risk", lazy="dynamic",
                                 cascade="all, delete-orphan",
                                 order_by="VulnerabilityFinding.date_found")
 
     # ── Computed properties ──────────────────────────────────────────────────
+    # The math lives in app/scoring.py; these only supply the inputs.
     @property
     def inherent_risk_score(self):
-        if self.likelihood and self.impact:
-            return self.likelihood * self.impact
-        return None
+        return scoring.inherent_score(self.likelihood, self.impact)
 
     @property
     def residual_risk_score(self):
-        inherent = self.inherent_risk_score
-        if inherent is None:
-            return None
-        if not self.control_effectiveness:
-            return float(inherent)
-        reductions = {1: 0.10, 2: 0.25, 3: 0.35, 4: 0.50, 5: 0.65}
-        reduction = reductions.get(self.control_effectiveness, 0)
-        return round(inherent * (1 - reduction), 1)
+        return scoring.residual_score(self.likelihood, self.impact,
+                                      self.control_effectiveness)
 
     @property
     def rag_status(self):
         from flask import current_app
-        score = self.residual_risk_score
-        if score is None:
-            return "UNKNOWN"
-        red = current_app.config.get("RAG_RED_THRESHOLD", 15)
-        amber = current_app.config.get("RAG_AMBER_THRESHOLD", 9)
-        if score >= red:
-            return "RED"
-        elif score >= amber:
-            return "AMBER"
-        return "GREEN"
+        return scoring.rag_status(
+            self.residual_risk_score,
+            current_app.config.get("RAG_RED_THRESHOLD", 15),
+            current_app.config.get("RAG_AMBER_THRESHOLD", 9),
+        )
 
     @property
     def exceeds_risk_appetite(self):
         from flask import current_app
-        score = self.residual_risk_score
-        if score is None:
-            return False
-        threshold = current_app.config.get("RISK_APPETITE_THRESHOLD", 8)
-        return score > threshold
+        return scoring.exceeds_appetite(
+            self.residual_risk_score,
+            current_app.config.get("RISK_APPETITE_THRESHOLD", 8),
+        )
 
     @property
     def age_days(self):

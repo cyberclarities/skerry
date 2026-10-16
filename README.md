@@ -102,7 +102,7 @@ defaults are red at 15, amber at 9, and appetite exceeded above 8.
 
 A word on what those reductions are: they are a defensible convention, not a
 measurement. If your organization has calibrated numbers, change them in
-`app/scoring.py` and `app/models.py` and document why.
+`app/scoring.py`, the one place the scoring math lives, and document why.
 
 ## Known limitations
 
@@ -118,11 +118,12 @@ it. Fuller detail is in [`SECURITY.md`](SECURITY.md).
 - **No pagination.** List, dashboard, and report views load the full register
   and filter in Python. Comfortable in the hundreds of risks; it will drag well
   before it breaks.
-- **Front-end libraries load from public CDNs** without subresource integrity
-  hashes. Vendor them locally if your threat model includes CDN compromise.
-- **The container runs as root.** Fine behind Caddy on a host you control;
-  worth changing before you expose it more widely.
-- **No automated test suite yet.** Changes are verified by hand.
+- **Front-end libraries load from a public CDN.** Integrity hashes stop a
+  modified file from running, but the pages still need the CDN to be reachable.
+  Vendor the files locally if that dependency matters to you.
+- **Tests do not cover a live SSO sign-in or a real container build.** Run
+  `python -m pytest tests/ -q` for everything else, and check those two by
+  hand after changing authentication or the Dockerfile.
 
 ## Contributing
 

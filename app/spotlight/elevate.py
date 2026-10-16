@@ -257,7 +257,6 @@ def elevate(findings, form, user, next_risk_id):
     if not eligible:
         return None, None, skipped
 
-    hosts = hosts_for(eligible)
     proposal = build_proposal(eligible)
 
     risk = Risk(risk_id=next_risk_id, created_by_id=user.id)

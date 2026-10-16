@@ -1,6 +1,6 @@
 from flask import (Blueprint, render_template, redirect, url_for,
                    request, flash, current_app)
-from flask_login import login_required, current_user
+from flask_login import current_user
 from app.models import db, User
 from app.decorators import admin_required
 
@@ -23,9 +23,12 @@ def create_user():
     email = request.form.get("email", "").strip().lower()
     name = request.form.get("name", "").strip()
     role = request.form.get("role", "viewer")
-    password = request.form.get("password", "").strip()
+    # Passwords are taken exactly as typed. Stripping here while login did
+    # not meant a password with a leading or trailing space could never be
+    # used to sign in.
+    password = request.form.get("password", "")
 
-    if not username or not email or not name or not password:
+    if not username or not email or not name or not password.strip():
         flash("Username, email, name, and password are required.", "danger")
         return redirect(url_for("users.manage"))
 
@@ -55,7 +58,7 @@ def create_user():
 @users_bp.route("/<int:user_id>/edit", methods=["POST"])
 @admin_required
 def edit_user(user_id):
-    user = User.query.get_or_404(user_id)
+    user = db.get_or_404(User, user_id)
 
     # ── Validate everything before touching the record ───────────────────────
     submitted_role = request.form.get("role", user.role)
@@ -88,7 +91,10 @@ def edit_user(user_id):
             flash(f"Username '{new_username}' is already taken.", "danger")
             return redirect(url_for("users.manage"))
 
-    new_password = request.form.get("password", "").strip()
+    new_password = request.form.get("password", "")
+    if new_password and not new_password.strip():
+        flash("Password cannot be only spaces.", "danger")
+        return redirect(url_for("users.manage"))
     if new_password and len(new_password) < 12:
         flash("Password must be at least 12 characters.", "danger")
         return redirect(url_for("users.manage"))
@@ -96,7 +102,7 @@ def edit_user(user_id):
     # ── Apply ────────────────────────────────────────────────────────────────
     if new_username and new_username != user.username:
         user.username = new_username
-    user.name = request.form.get("name", user.name).strip()
+    user.name = request.form.get("name", "").strip() or user.name
     user.role = submitted_role
     user.is_active = submitted_active
     if new_password:
@@ -115,7 +121,7 @@ def edit_user(user_id):
 @users_bp.route("/<int:user_id>/delete", methods=["POST"])
 @admin_required
 def delete_user(user_id):
-    user = User.query.get_or_404(user_id)
+    user = db.get_or_404(User, user_id)
 
     if user.id == current_user.id:
         flash("You cannot delete your own account.", "danger")

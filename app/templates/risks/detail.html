@@ -39,7 +39,7 @@
     {% endif %}
     {% if current_user.is_admin %}
     <form method="POST" action="{{ url_for('risks.delete_risk', risk_pk=risk.id) }}"
-          onsubmit="return confirm('Delete {{ risk.risk_id }}? This cannot be undone.')">
+          data-confirm="Delete {{ risk.risk_id }}? This cannot be undone.">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit" class="btn btn-sm btn-outline-danger">
         <i class="bi bi-trash"></i> Delete
@@ -394,7 +394,7 @@
           {% if current_user.is_operator %}
           <td>
             <form method="POST" action="{{ url_for('risks.delete_vulnerability', risk_pk=risk.id, vuln_pk=v.id) }}"
-                  onsubmit="return confirm('Remove {{ v.cve_id or "this finding" }}?')">
+                  data-confirm="Remove {{ v.cve_id or 'this finding' }}?">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-trash"></i></button>
             </form>

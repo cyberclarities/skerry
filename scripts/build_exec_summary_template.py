@@ -21,9 +21,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _docx_style import (  # noqa: E402
-    TEAL, RED, GREEN, GRAY, BODY_TXT, WHITE, CREAM_FILL, PINK_FILL, FONT, PAGE_W_TWIPS,
-    set_cell_bg, set_cell_borders, set_cell_text, add_table, add_data_row,
-    label_value_table, h1, h2, body, body_multi, bullet, tag_p, spacer,
+    TEAL, RED, GREEN, GRAY, BODY_TXT, PINK_FILL, FONT, PAGE_W_TWIPS,
+    set_cell_bg, set_cell_borders, set_cell_text,
+    label_value_table, h2, body, body_multi, bullet, tag_p, spacer,
     add_header_footer, new_letter_doc,
 )
 from docx.shared import Pt, Twips

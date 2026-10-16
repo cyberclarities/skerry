@@ -229,7 +229,7 @@ For a single-risk document suitable for routing to leadership and signature, see
 
 Navigate to **Register → New Risk** (button in the top-right corner). This option is visible to Operators and Admins.
 
-A Risk ID is assigned automatically using the configured prefix (`CR-001`, `CR-002`, etc.). You will see the next available ID displayed before you save.
+A Risk ID is assigned automatically using the configured prefix (`SKR-001`, `SKR-002`, etc., unless your administrator set a different one). You will see the next available ID displayed before you save.
 
 ### What Is Required
 

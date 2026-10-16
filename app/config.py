@@ -98,14 +98,6 @@ class Config:
     ADMIN_NAME = os.environ.get("ADMIN_NAME", "Administrator")
     ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 
-    @property
-    def oidc_enabled(self):
-        return bool(self.OIDC_CLIENT_ID and self.OIDC_CLIENT_SECRET and self.OIDC_DISCOVERY_URL)
-
-    @property
-    def email_enabled(self):
-        return bool(self.SMTP_HOST)
-
 
 # Values we refuse to boot with — placeholders that mean "nobody set this yet."
 PLACEHOLDER_SECRETS = {

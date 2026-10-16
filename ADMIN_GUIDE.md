@@ -228,7 +228,7 @@ ADMIN_PASSWORD=YourStr0ng!Password
 DATABASE_URL=sqlite:////app/data/risk_register.db
 
 # Risk ID prefix (set before first run; changing later does not renumber existing records)
-RISK_ID_PREFIX=CR
+RISK_ID_PREFIX=SKR
 
 # Scoring thresholds
 RAG_RED_THRESHOLD=15
@@ -344,6 +344,8 @@ There is no self-service password reset. An admin sets the new password through 
 ### 4.6 SSO-Provisioned Users
 
 When Azure AD SSO is active, users who log in through SSO are provisioned automatically. Their role comes from their Azure AD group membership. You cannot set a local password for these accounts — they authenticate through the SSO button only. You can still deactivate them or manually adjust their role from the User Management page if a group-based assignment does not fit.
+
+**Existing local accounts and SSO.** Skerry binds an SSO identity to an existing account with the same email only when the identity provider asserts `email_verified`. Azure AD (Entra ID) does not send that claim, so a user who already has a local account is turned away at the SSO button with a message to contact an administrator. Binding on email alone would let anyone whose token carried that address take over the account. There is no linking screen yet. To link one by hand, find the refusal in the application log (`OIDC login refused for <email>: existing local account ...`), which records the token's `sub` value, and set `users.oidc_sub` to that value for the user. Use the logged value, not the Entra object ID; Entra's `sub` is specific to the app registration and differs from it.
 
 ---
 
@@ -618,7 +620,9 @@ docker compose down
 docker compose up --build -d
 ```
 
-The database schema is managed by SQLAlchemy's `db.create_all()` on startup — it adds new tables and columns but does not drop existing ones. This means forward migrations are handled automatically. Rollback to a prior version may require restoring from backup if schema changes were made.
+The database schema is managed by SQLAlchemy's `db.create_all()` on startup. It creates tables that do not exist yet. It does not add columns to a table that already exists, and it never drops anything. A release that only adds tables upgrades on its own; a release that changes an existing table needs a migration step, and its release notes will say so. Restoring from the backup above is the rollback path.
+
+The container starts as root only long enough to give `./data` to the app user (uid 10001), then runs Gunicorn as that user. No manual ownership change is needed on upgrade; see `docker-entrypoint.sh`.
 
 ### 10.2 Checking Container Status
 
@@ -959,7 +963,7 @@ All variables are read from `.env` at startup. Restart the stack after any chang
 | `PORT` | `5000` | Internal port Gunicorn binds inside the container. Caddy proxies to this port. Change only if 5000 conflicts with another process on your host. See [Section 2.3](#23-configure-hostname-and-port). |
 | `SECRET_KEY` | `dev-secret-change-me` | Flask session signing key. **Change before production.** Generate with `openssl rand -hex 32`. If changed, all active sessions are invalidated. |
 | `DATABASE_URL` | `sqlite:////app/data/risk_register.db` | SQLite path inside the container. Do not change unless remapping the volume. |
-| `RISK_ID_PREFIX` | `CR` | Prefix for auto-generated Risk IDs (e.g., `CR-001`). Set before first run. Changing after risks exist does not renumber existing records. |
+| `RISK_ID_PREFIX` | `SKR` | Prefix for auto-generated Risk IDs (e.g., `SKR-001`). Set before first run. Changing after risks exist does not renumber existing records. |
 | `RAG_RED_THRESHOLD` | `15` | Residual score at or above this value is RED. |
 | `RAG_AMBER_THRESHOLD` | `9` | Residual score at or above this value is AMBER (and below RED threshold). |
 | `RISK_APPETITE_THRESHOLD` | `8` | Residual score above this value is flagged as exceeding risk appetite. |

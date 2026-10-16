@@ -5,7 +5,7 @@
 **Data License:** CC0-1.0
 **Document Namespace:** skerry-sbom-v4
 **Document Created:** 2026-07-08
-**Document Updated:** 2026-08-11
+**Document Updated:** 2026-10-16
 **Creator:** Organization: CyberClarities
 **Creator Tool:** pip install --dry-run --python-version 3.12 --report, plus distribution metadata
 
@@ -51,20 +51,25 @@
 | app/config.py | Configuration | Environment-driven config class; refuses to boot on a placeholder SECRET_KEY |
 | app/extensions.py | Wiring | Shared extension instances (login manager, CSRF, limiter) |
 | app/models.py | Data layer | SQLAlchemy ORM: User, Risk, AuditLog, TrendLog, LookupItem, NISTCSFReference |
-| app/scoring.py | Business logic | Inherent / residual score calculation, RAG thresholds, control reduction, risk ID formatting |
+| app/scoring.py | Business logic | Inherent / residual score calculation, RAG thresholds, control reduction. The single source for the scoring math; `models.py` calls it |
 | app/seed.py | Seed data | NIST CSF 2.0 subcategory data, default lookup values |
 | app/email_utils.py | Notification | SMTP notification logic, APScheduler daily job at 07:00 |
 | app/decorators.py | Authorization | Role enforcement decorators |
 | app/decision_request.py | Business logic | Builds the docxtpl render context for the per-risk Decision / Acceptance Form (.docx) |
 | app/routes/auth_routes.py | Blueprint | Local auth, Azure AD OIDC login / callback, logout |
 | app/routes/risk_routes.py | Blueprint | Risk CRUD, trend log, audit log |
-| app/routes/dashboard_routes.py | Blueprint | Dashboard, health endpoint |
+| app/routes/dashboard_routes.py | Blueprint | Dashboard |
 | app/routes/user_routes.py | Blueprint | User management (admin) |
 | app/routes/report_routes.py | Blueprint | CSF coverage, overdue actions, trend reports |
 | app/routes/export_routes.py | Blueprint | Excel (.xlsx) workbook export |
 | app/routes/settings_routes.py | Blueprint | Lookup list management, database import / export |
+| app/routes/ingest_routes.py | Blueprint | CrowdStrike Spotlight ingest queue: triage, elevation to risk, sync history |
+| app/models_spotlight.py | Data layer | Spotlight staging tables: hosts, findings, elevations, sync runs |
+| app/spotlight/ | Integration | Falcon API client, ingest normalizer, elevation, score suggestions |
 | app/static/ | Brand assets | Favicon set, touch and PWA icons, and the Skerry mark (SVG) |
-| scripts/build_decision_request_template.py | Build script | Generates the .docx template consumed by docxtpl |
+| scripts/build_exec_summary_template.py | Build script | Generates the Executive Summary .docx template consumed by docxtpl |
+| scripts/build_supporting_evidence_template.py | Build script | Generates the Supporting Evidence .docx template consumed by docxtpl |
+| docker-entrypoint.sh | Container entrypoint | Gives `/app/data` to the app user, then drops from root before Gunicorn starts |
 | run.py | Entrypoint | Gunicorn WSGI entrypoint |
 
 ---
@@ -95,20 +100,20 @@ The 16 packages declared in `requirements.txt`.
 
 | SPDXID | PackageName | Version | License | Purpose |
 |---|---|---|---|---|
-| SPDXRef-flask | Flask | 3.1.0 | BSD-3-Clause | Web framework |
+| SPDXRef-flask | Flask | 3.1.3 | BSD-3-Clause | Web framework |
 | SPDXRef-flask-sqlalchemy | Flask-SQLAlchemy | 3.1.1 | BSD-3-Clause | ORM integration |
 | SPDXRef-flask-login | Flask-Login | 0.6.3 | MIT | Session / auth management |
 | SPDXRef-flask-wtf | Flask-WTF | 1.2.2 | BSD-3-Clause | CSRF protection, form rendering |
 | SPDXRef-flask-limiter | Flask-Limiter | 3.8.0 | MIT | Failed-login rate limiting on POST /login |
 | SPDXRef-wtforms | WTForms | 3.2.1 | BSD-3-Clause | Form validation |
 | SPDXRef-sqlalchemy | SQLAlchemy | 2.0.36 | MIT | ORM / database abstraction |
-| SPDXRef-werkzeug | Werkzeug | 3.1.3 | BSD-3-Clause | WSGI utilities, ProxyFix middleware |
-| SPDXRef-authlib | Authlib | 1.3.2 | BSD-3-Clause | OIDC / OAuth2 client (Azure AD SSO) |
-| SPDXRef-requests | requests | 2.32.3 | Apache-2.0 | HTTP client (OIDC discovery) |
+| SPDXRef-werkzeug | Werkzeug | 3.1.9 | BSD-3-Clause | WSGI utilities, ProxyFix middleware |
+| SPDXRef-authlib | Authlib | 1.6.12 | BSD-3-Clause | OIDC / OAuth2 client (Azure AD SSO) |
+| SPDXRef-requests | requests | 2.33.0 | Apache-2.0 | HTTP client (OIDC discovery) |
 | SPDXRef-openpyxl | openpyxl | 3.1.5 | MIT | Excel (.xlsx) export |
 | SPDXRef-docxtpl | docxtpl | 0.19.1 | LGPL-2.1 | Word (.docx) rendering for the Decision / Acceptance Form |
 | SPDXRef-apscheduler | APScheduler | 3.10.4 | MIT | Background scheduler (daily email notifications) |
-| SPDXRef-python-dotenv | python-dotenv | 1.0.1 | BSD-3-Clause | .env file loading |
+| SPDXRef-python-dotenv | python-dotenv | 1.2.2 | BSD-3-Clause | .env file loading |
 | SPDXRef-email-validator | email-validator | 2.2.0 | Unlicense | Email address validation |
 | SPDXRef-gunicorn | gunicorn | 22.0.0 | MIT | WSGI HTTP server |
 
@@ -207,6 +212,7 @@ Installed via `apk add` in the `web` container Dockerfile.
 |---|---|---|---|
 | libffi | libffi | MIT | Foreign function interface (required by cffi / cryptography, used via Authlib for OIDC) |
 | curl | curl | curl | Health check probe in docker-compose |
+| su-exec | su-exec | MIT | Lets the entrypoint drop from root to the app user |
 
 > **Version note:** Alpine package versions resolve at image build time from the Alpine
 > package index. To lock them, use `apk add libffi=<version>` and commit the exact
@@ -231,13 +237,15 @@ internet access from the client browser.
 |---|---|---|---|---|
 | Bootstrap | 5.3.3 | MIT | cdn.jsdelivr.net/npm/bootstrap@5.3.3 | UI framework |
 | Bootstrap Icons | 1.11.3 | MIT | cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3 | Icon font |
-| Chart.js | 4.4.4 | MIT | cdn.jsdelivr.net/npm/chart.js@4.4.4 | Dashboard charts |
-| htmx | 1.9.12 | BSD-2-Clause | unpkg.com/htmx.org@1.9.12 | Partial-page updates |
+| Chart.js | 4.4.4 | MIT | cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.js | Dashboard charts |
+| htmx | 1.9.12 | BSD-2-Clause | cdn.jsdelivr.net/npm/htmx.org@1.9.12/dist/htmx.min.js | Partial-page updates |
 
-> **Integrity note:** These tags carry no `integrity="sha384-..."` attribute, so a
-> compromised CDN would be served and executed without complaint. For air-gapped or
-> high-assurance deployments, vendor the files under `app/static/vendor/` and update the
-> `<script>` / `<link>` tags in `app/templates/base.html`.
+> **Integrity note:** Every tag carries an `integrity="sha384-..."` hash and
+> `crossorigin="anonymous"`, so a modified file is refused by the browser. The hashes
+> were computed from the npm package of each version (`npm pack`); the Bootstrap and
+> htmx values match the ones those projects publish. A version bump needs new hashes.
+> The pages still depend on the CDN being reachable; for air-gapped deployments, vendor
+> the files under `app/static/vendor/` and update the tags.
 
 ---
 
@@ -254,11 +262,11 @@ internet access from the client browser.
 
 ## 8. License Summary
 
-Counted across every component listed in this document — 66 in total.
+Counted across every component listed in this document — 67 in total.
 
 | License | Count |
 |---|---|
-| MIT | 30 |
+| MIT | 31 |
 | BSD-3-Clause | 15 |
 | Apache-2.0 | 3 |
 | BSD-2-Clause | 3 |
@@ -325,6 +333,7 @@ and are invisible to container image scanners. Track them separately.
 | 2026-07-08 | Initial SBOM, v2.0 of the application. |
 | 2026-08-11 | Removed WeasyPrint and its Alpine runtime libraries (Pango, Cairo, GDK-PixBuf, HarfBuzz, Fontconfig, ttf-dejavu). Added docxtpl for the Decision / Acceptance Form export. |
 | 2026-08-11 | Version bump to 4.0 and rename to Skerry. Corrected three packages listed as dependencies that pip does not install (oauthlib, PyJWT, python-dateutil). Added the nine-package Flask-Limiter subtree, which was absent. Refreshed all transitive versions and licences from distribution metadata. |
+| 2026-10-16 | Security fixes from the pre-push review. Bumped Flask 3.1.0 → 3.1.3, Werkzeug 3.1.3 → 3.1.9, Authlib 1.3.2 → 1.6.12, requests 2.32.3 → 2.33.0, python-dotenv 1.0.1 → 1.2.2; `pip-audit` reports no known vulnerabilities in the direct dependencies. Added su-exec. Added subresource integrity to the CDN assets and moved htmx from unpkg to jsDelivr. Added the Spotlight components to the component list. Section 4 was **not** regenerated in this update; its transitive versions are still the 2026-08-11 resolution and may differ from what the bumped packages pull in. |
 
 ---
 

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from flask import (Blueprint, render_template, redirect, url_for,
                    request, flash, send_file, current_app)
-from flask_login import login_required
+from flask_login import current_user
 from app.models import db, LookupItem
 from app.decorators import admin_required
 
@@ -87,7 +87,7 @@ def add_item():
 @settings_bp.route("/lookup/<int:item_id>/edit", methods=["POST"])
 @admin_required
 def edit_item(item_id):
-    item = LookupItem.query.get_or_404(item_id)
+    item = db.get_or_404(LookupItem, item_id)
     new_value = request.form.get("value", "").strip()
 
     if not new_value:
@@ -112,7 +112,7 @@ def edit_item(item_id):
 @settings_bp.route("/lookup/<int:item_id>/delete", methods=["POST"])
 @admin_required
 def delete_item(item_id):
-    item = LookupItem.query.get_or_404(item_id)
+    item = db.get_or_404(LookupItem, item_id)
     category = item.category
     item.is_active = False  # soft-delete so existing risk records aren't orphaned
     db.session.commit()
@@ -132,6 +132,12 @@ def db_download():
         flash("Database file not found on disk.", "danger")
         return _back("database")
 
+    # The file holds password hashes and raw Falcon payloads. Leave a trace.
+    current_app.logger.warning(
+        "AUDIT database downloaded by %s (user id %s) from %s",
+        current_user.username or current_user.email, current_user.id,
+        request.remote_addr,
+    )
     filename = f"risk_register_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.db"
     return send_file(
         db_path,
@@ -147,6 +153,11 @@ def db_import():
     """Replace the live database with an uploaded SQLite file."""
     from sqlalchemy.engine import make_url
 
+    current_app.logger.warning(
+        "AUDIT database import attempted by %s (user id %s) from %s",
+        current_user.username or current_user.email, current_user.id,
+        request.remote_addr,
+    )
     uploaded = request.files.get("db_file")
     if not uploaded or not uploaded.filename:
         flash("No file selected.", "danger")
@@ -183,7 +194,7 @@ def db_import():
 
         required = {
             "users", "risks", "audit_log", "trend_log",
-            "nist_csf_reference", "lookup_items",
+            "vulnerability_findings", "nist_csf_reference", "lookup_items",
         }
         missing = required - tables
         if missing:
@@ -209,6 +220,15 @@ def db_import():
         shutil.move(tmp_path, db_path)
         tmp_path = None  # prevent cleanup in finally block
 
+        # An older export predates the Spotlight tables. Create anything
+        # missing now, rather than erroring on the ingest pages until the
+        # next restart. create_all only adds; it never alters a table.
+        db.create_all()
+        current_app.logger.warning(
+            "AUDIT database replaced by %s (user id %s)",
+            current_user.username or current_user.email, current_user.id,
+        )
+
         flash(
             "Database imported successfully. A backup of the previous database "
             "was saved alongside the data file.",
@@ -217,7 +237,8 @@ def db_import():
 
     except Exception as exc:
         current_app.logger.error("DB import failed: %s", exc)
-        flash(f"Import failed: {exc}", "danger")
+        flash("Import failed. The previous database is unchanged; see the "
+              "application log for details.", "danger")
     finally:
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
@@ -228,7 +249,7 @@ def db_import():
 @settings_bp.route("/lookup/<int:item_id>/reorder", methods=["POST"])
 @admin_required
 def reorder_item(item_id):
-    item = LookupItem.query.get_or_404(item_id)
+    item = db.get_or_404(LookupItem, item_id)
     direction = request.form.get("direction")
     peers = (
         LookupItem.query

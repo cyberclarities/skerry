@@ -1,7 +1,6 @@
-from flask import Blueprint, render_template
+from flask import Blueprint, current_app, render_template
 from flask_login import login_required
-from sqlalchemy import func
-from app.models import db, Risk
+from app.models import Risk
 
 dashboard_bp = Blueprint("dashboard", __name__)
 
@@ -21,12 +20,26 @@ def index():
     overdue = [r for r in risks if r.is_overdue]
     board_flags = [r for r in risks if r.board_reporting_flag]
 
-    # Heat map: likelihood (1-5) vs impact (1-5) — count of risks per cell
+    # Heat map. Each risk sits in the cell for its likelihood x impact (the
+    # inherent position), but is counted under its current RAG label, which
+    # comes from the residual score after controls. A well-controlled risk
+    # therefore shows as a green count inside a red cell, rather than as an
+    # unexplained red count. Risks missing likelihood or impact cannot be
+    # placed; they are counted so the matrix total adds up. Closed risks are
+    # left off entirely: the map shows exposure we still carry. Accepted risks
+    # stay, because accepting a risk does not make it go away.
     heat_map = {}
+    unplotted = 0
     for r in risks:
+        if r.status == "Closed":
+            continue
         if r.likelihood and r.impact:
-            key = (r.likelihood, r.impact)
-            heat_map[key] = heat_map.get(key, 0) + 1
+            cell = heat_map.setdefault((r.likelihood, r.impact), {})
+            cell[r.rag_status] = cell.get(r.rag_status, 0) + 1
+        else:
+            unplotted += 1
+    rag_red = current_app.config.get("RAG_RED_THRESHOLD", 15)
+    rag_amber = current_app.config.get("RAG_AMBER_THRESHOLD", 9)
 
     # Control test results
     pass_count = sum(1 for r in risks if r.control_test_result == "Pass")
@@ -72,6 +85,9 @@ def index():
         overdue_count=len(overdue),
         board_flag_count=len(board_flags),
         heat_map=heat_map,
+        heat_unplotted=unplotted,
+        rag_red=rag_red,
+        rag_amber=rag_amber,
         pass_count=pass_count,
         fail_count=fail_count,
         not_tested_count=not_tested_count,

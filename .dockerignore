@@ -1,0 +1,34 @@
+# Docker does not read .gitignore. Without this file, `COPY . .` puts
+# whatever sits next to the Dockerfile into an image layer -- and the
+# deployment directory always holds .env, because docker-compose reads
+# env_file: .env from there.
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Runtime data: the SQLite database, its backups, and import temp files
+data/
+*.db
+*.db-*
+*.db.backup_*
+*.sqlite
+*.sqlite3
+
+# Not needed at runtime
+.git/
+.gitignore
+.gitattributes
+.shannon/
+.playwright/
+tests/
+scripts/
+*.md
+!README.md
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+.DS_Store

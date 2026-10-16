@@ -1,10 +1,26 @@
 import io
 from datetime import date
-from flask import Blueprint, send_file, request
+from flask import Blueprint, send_file
 from flask_login import login_required
 from app.models import Risk
 
 exports_bp = Blueprint("exports", __name__, url_prefix="/export")
+
+
+def _defuse_formulas(workbook):
+    """Store every formula-looking value as literal text.
+
+    openpyxl writes any string starting with "=" as a live formula, so a risk
+    field reading =HYPERLINK(...) would execute in every reader's Excel.
+    Nothing in this export is meant to be a formula; quotePrefix also keeps
+    Excel from re-evaluating the cell if someone edits it later.
+    """
+    for sheet in workbook.worksheets:
+        for row in sheet.iter_rows():
+            for cell in row:
+                if cell.data_type == "f":
+                    cell.data_type = "s"
+                    cell.quotePrefix = True
 
 
 @exports_bp.route("/excel")
@@ -28,7 +44,6 @@ def export_excel():
     green_fill = PatternFill("solid", fgColor="00B050")
 
     white_font = Font(bold=True, color="FFFFFF")
-    bold_font = Font(bold=True)
     thin = Side(style="thin")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
@@ -163,6 +178,7 @@ def export_excel():
         ws2.cell(row=ri, column=8, value=risk.status)
         ws2.cell(row=ri, column=9, value=risk.remediation_action)
 
+    _defuse_formulas(wb)
     out = io.BytesIO()
     wb.save(out)
     out.seek(0)

@@ -91,7 +91,7 @@
               <form method="POST"
                     action="{{ url_for('settings.delete_item', item_id=item.id) }}"
                     class="d-inline"
-                    onsubmit="return confirm('Remove \'{{ item.value }}\' from the list?')">
+                    data-confirm="Remove &lsquo;{{ item.value }}&rsquo; from the list?">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-1" title="Remove">
                   <i class="bi bi-trash"></i>
@@ -159,7 +159,7 @@
       <form method="POST"
             action="{{ url_for('settings.db_import') }}"
             enctype="multipart/form-data"
-            onsubmit="return confirm('Replace the current database with the uploaded file? This cannot be undone.')">
+            data-confirm="Replace the current database with the uploaded file? This cannot be undone.">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="d-flex gap-2 align-items-end">
           <div>

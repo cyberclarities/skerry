@@ -20,12 +20,12 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _docx_style import (  # noqa: E402
-    TEAL, RED, GREEN, GRAY, BODY_TXT, WHITE, CREAM_FILL, PINK_FILL, FONT, PAGE_W_TWIPS,
-    set_cell_bg, set_cell_borders, set_cell_text, set_col_widths, add_table, add_data_row,
+    TEAL, GRAY, BODY_TXT, CREAM_FILL, FONT,
+    add_table, add_data_row,
     label_value_table, h1, h2, body, body_multi, tag_p, spacer,
     add_header_footer, new_letter_doc,
 )
-from docx.shared import Pt, Twips
+from docx.shared import Pt
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUTPUT_PATH = os.path.join(REPO_ROOT, "app", "templates", "exports", "risk_supporting_evidence_template.docx")

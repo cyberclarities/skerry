@@ -16,27 +16,26 @@ triage are operator-or-above; running a sync and testing credentials are
 admin-only, because those touch an external system with a stored key.
 """
 
-import logging
 from datetime import date
 
 from flask import (Blueprint, abort, flash, jsonify, redirect, render_template,
                    request, url_for)
 from flask_login import current_user, login_required
 from sqlalchemy import func, or_
+from sqlalchemy.exc import IntegrityError
 
 from app.decorators import admin_required, log_audit, operator_required
-from app.models import LookupItem, NISTCSFReference, db
+from app.models import NISTCSFReference, db
 from app.models_spotlight import (INGEST_DISMISSED, INGEST_ELEVATED, INGEST_NEW,
                                   INGEST_STATES, INGEST_TRIAGED,
                                   SpotlightElevation, SpotlightFinding,
                                   SpotlightHost, SpotlightSyncRun)
+from app.routes.auth_routes import _safe_next
 from app.routes.risk_routes import (CONTROL_TYPES, RISK_CATEGORIES, STATUSES,
-                                    TREATMENTS, VELOCITIES, _next_risk_id)
+                                    TREATMENTS, VELOCITIES, _lookup, _next_risk_id)
 from app.scoring import CONTROL_EFFECTIVENESS_LABELS, IMPACT_LABELS, LIKELIHOOD_LABELS
 from app.spotlight import elevate as elevate_mod
 from app.spotlight.ingest import client_from_config, run_sync
-
-log = logging.getLogger(__name__)
 
 ingest_bp = Blueprint("ingest", __name__, url_prefix="/ingest")
 
@@ -262,9 +261,16 @@ def elevate():
         return redirect(url_for("ingest.index"))
 
     if request.method == "POST":
-        risk, elevation, skipped = elevate_mod.elevate(
-            findings, request.form, current_user, _next_risk_id()
-        )
+        try:
+            risk, elevation, skipped = elevate_mod.elevate(
+                findings, request.form, current_user, _next_risk_id()
+            )
+        except IntegrityError:
+            # Another save took this risk ID between read and write.
+            db.session.rollback()
+            flash("That risk ID was taken by a save happening at the same "
+                  "moment. Nothing was changed; submit again.", "warning")
+            return redirect(url_for("ingest.index"))
         if risk is None:
             flash("Nothing to elevate — all selected findings are already on a risk.",
                   "info")
@@ -318,7 +324,7 @@ def triage():
     ids = request.form.getlist("finding_ids", type=int)
     action = request.form.get("action", "")
     reason = (request.form.get("reason") or "").strip()
-    back = request.form.get("back") or url_for("ingest.index")
+    back = _safe_next(request.form.get("back"), url_for("ingest.index"))
 
     if not ids:
         flash("No findings selected.", "warning")
@@ -344,16 +350,17 @@ def triage():
 def reopen(finding_id):
     """Put a dismissed finding back in the queue."""
     finding = db.session.get(SpotlightFinding, finding_id) or abort(404)
+    back = _safe_next(request.form.get("back"), url_for("ingest.index"))
     if finding.elevation_id:
         flash("That finding is attached to a risk; unpick it there first.", "warning")
-        return redirect(request.referrer or url_for("ingest.index"))
+        return redirect(back)
     finding.ingest_state = INGEST_NEW
     finding.dismissed_reason = None
     finding.dismissed_at = None
     finding.dismissed_by_id = None
     db.session.commit()
     flash("Finding returned to the queue.", "success")
-    return redirect(request.referrer or url_for("ingest.index"))
+    return redirect(back)
 
 
 # -- sync ---------------------------------------------------------------------
@@ -419,12 +426,6 @@ def test_connection():
 
 
 # -- helpers ------------------------------------------------------------------
-def _lookup(category):
-    return [item.value for item in LookupItem.query
-            .filter_by(category=category, is_active=True)
-            .order_by(LookupItem.display_order, LookupItem.value).all()]
-
-
 def _csf_subcategories():
     return (NISTCSFReference.query
             .with_entities(NISTCSFReference.subcategory_code,

@@ -15,6 +15,7 @@ integration needs.
 import logging
 import time
 from datetime import datetime, timezone
+from urllib.parse import urlsplit
 
 import requests
 
@@ -53,6 +54,8 @@ class FalconSpotlightClient:
             )
         self.client_id = client_id
         self.client_secret = client_secret
+        if base_url:
+            _check_base_url(base_url)
         self.base_url = (base_url or CLOUD_REGIONS.get(region) or "").rstrip("/")
         if not self.base_url:
             raise SpotlightError(
@@ -222,6 +225,21 @@ class FalconSpotlightClient:
             return False, str(exc)
         except Exception as exc:  # noqa: BLE001 -- surface, don't swallow
             return False, f"Unexpected error: {exc}"
+
+
+ALLOWED_HOST_SUFFIXES = (".crowdstrike.com", ".crowdstrike.mil")
+
+
+def _check_base_url(url):
+    """FALCON_BASE_URL receives the client secret. Refuse anything that is
+    not HTTPS to a CrowdStrike API host, so a typo cannot send it elsewhere."""
+    parts = urlsplit(url)
+    host = (parts.hostname or "").lower()
+    if parts.scheme != "https" or not host.endswith(ALLOWED_HOST_SUFFIXES):
+        raise SpotlightError(
+            f"FALCON_BASE_URL must be an https:// URL on a CrowdStrike API host "
+            f"(*.crowdstrike.com or *.crowdstrike.mil); got '{url}'."
+        )
 
 
 def _safe_error(resp):

@@ -14,7 +14,7 @@ instance/
 # Generated documents
 *.xlsx
 *.docx
-!scripts/templates/*.docx
+!app/templates/exports/*.docx
 
 # Python
 __pycache__/
@@ -30,6 +30,12 @@ htmlcov/
 # Caddy / container local state
 caddy_data/
 caddy_config/
+
+# Local security and browser tooling. Scan output and session state can
+# describe live weaknesses; it never belongs in the repository.
+.shannon/
+.playwright/
+.playwright-cli/
 
 # Editor and OS junk
 .DS_Store

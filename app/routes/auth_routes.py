@@ -3,19 +3,32 @@ from urllib.parse import urlsplit
 from flask import (Blueprint, render_template, redirect, url_for,
                    request, flash, current_app)
 from flask_login import login_user, logout_user, login_required, current_user
+from werkzeug.security import check_password_hash, generate_password_hash
+
 from app.models import db, User
 from app.extensions import limiter
 
 auth_bp = Blueprint("auth", __name__)
 
+# Checked against when the username does not exist, so a failed login costs
+# the same time either way and response timing does not reveal valid names.
+_DUMMY_HASH = generate_password_hash("timing-equalizer")
 
-def _safe_next(next_url: str) -> str:
-    """Return next_url only if it's a relative path on this host; else dashboard."""
-    if not next_url:
-        return url_for("dashboard.index")
+
+def _safe_next(next_url, fallback=None):
+    """Return next_url only if it is a path on this host; else the fallback.
+
+    Rejects absolute URLs, scheme-relative ones (//host), and the backslash
+    and whitespace variants browsers normalize into //host.
+    """
+    fallback = fallback or url_for("dashboard.index")
+    if not next_url or not next_url.startswith("/"):
+        return fallback
+    if next_url.startswith("//") or any(c in next_url for c in "\\\t\r\n "):
+        return fallback
     parsed = urlsplit(next_url)
     if parsed.scheme or parsed.netloc:
-        return url_for("dashboard.index")
+        return fallback
     return next_url
 
 
@@ -35,7 +48,9 @@ def login():
         remember = bool(request.form.get("remember"))
 
         user = User.query.filter_by(username=username, is_active=True).first()
-        if user and user.password_hash and user.check_password(password):
+        if not (user and user.password_hash):
+            check_password_hash(_DUMMY_HASH, password)
+        elif user.check_password(password):
             user.last_login = datetime.now(timezone.utc)
             db.session.commit()
             login_user(user, remember=remember)
@@ -103,8 +118,14 @@ def oidc_callback():
         return redirect(url_for("auth.login"))
 
     sub = userinfo.get("sub")
-    email = userinfo.get("email", "").lower()
+    email = (userinfo.get("email") or "").strip().lower()
     name = userinfo.get("name") or email
+
+    if not sub or not email:
+        current_app.logger.warning("OIDC login refused: token missing sub or email.")
+        flash("SSO login failed: the identity provider did not supply an "
+              "account identifier and email address.", "danger")
+        return redirect(url_for("auth.login"))
 
     groups = userinfo.get("groups") or token.get("groups") or []
     if not groups and "_claim_names" in userinfo and "groups" in userinfo["_claim_names"]:
@@ -130,6 +151,27 @@ def oidc_callback():
     if not user:
         user = User.query.filter_by(email=email).first()
         if user:
+            # Binding an SSO identity to an existing account on email alone
+            # hands that account to anyone whose token carries the address.
+            # Link only when the provider vouches for the email, and never
+            # re-point an account already bound to a different identity.
+            if user.oidc_sub and user.oidc_sub != sub:
+                current_app.logger.warning(
+                    "OIDC login refused for %s: account is bound to a "
+                    "different SSO identity.", email)
+                flash("This account is linked to a different SSO identity. "
+                      "Contact an administrator.", "danger")
+                return redirect(url_for("auth.login"))
+            if userinfo.get("email_verified") is not True:
+                # The sub is logged so an admin can link the account by hand
+                # (users.oidc_sub); see ADMIN_GUIDE 4.6.
+                current_app.logger.warning(
+                    "OIDC login refused for %s: existing local account and the "
+                    "provider did not assert email_verified (sub=%s).", email, sub)
+                flash("An account with this email already exists. An "
+                      "administrator must link it to SSO before you can sign "
+                      "in this way.", "danger")
+                return redirect(url_for("auth.login"))
             user.oidc_sub = sub
         else:
             user = User(email=email, name=name, oidc_sub=sub, role=role, is_active=True)

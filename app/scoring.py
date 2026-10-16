@@ -1,4 +1,8 @@
-"""Risk scoring helpers — pure functions, no DB or Flask deps."""
+"""Risk scoring: the single source for the math.
+
+Pure functions, no DB or Flask deps. Risk's score properties in models.py call
+these; change a reduction or threshold here and nowhere else.
+"""
 
 CONTROL_EFFECTIVENESS_REDUCTIONS = {
     1: 0.10,  # Minimal
@@ -64,6 +68,3 @@ def exceeds_appetite(residual: float | None, appetite_threshold: int = 8) -> boo
         return False
     return residual > appetite_threshold
 
-
-def next_risk_id(prefix: str, last_seq: int) -> str:
-    return f"{prefix}-{last_seq + 1:04d}"

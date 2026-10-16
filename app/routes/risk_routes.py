@@ -1,11 +1,12 @@
 import io
-from datetime import date, datetime, timezone
+from datetime import date
 from flask import (Blueprint, render_template, redirect, url_for,
                    request, flash, abort, jsonify, send_file)
 from flask_login import login_required, current_user
 from sqlalchemy import or_
-from app.models import db, Risk, TrendLog, VulnerabilityFinding, NISTCSFReference, LookupItem
-from app.decorators import operator_required, log_audit
+from sqlalchemy.exc import IntegrityError
+from app.models import db, AuditLog, Risk, TrendLog, VulnerabilityFinding, NISTCSFReference, LookupItem
+from app.decorators import admin_required, operator_required, log_audit
 from app.scoring import LIKELIHOOD_LABELS, IMPACT_LABELS, CONTROL_EFFECTIVENESS_LABELS
 from app.decision_request import build_context, suggested_defaults
 
@@ -31,6 +32,24 @@ STATUSES = ["Open", "In Progress", "Closed", "Accepted"]
 FREQUENCIES = ["Monthly", "Quarterly", "Annually"]
 VULN_SEVERITIES = ["Critical", "High", "Medium", "Low"]
 VULN_STATUSES = ["Open", "Remediated"]
+def _require_edit_rights(risk):
+    """Abort 403 unless the current user may change this risk.
+
+    Admins may change any risk. Operators may change risks they created, or
+    risks whose owner field matches their display name. A risk with no owner
+    needs an admin; there is no silent fallthrough.
+    """
+    if current_user.is_admin:
+        return
+    created_by_me = risk.created_by_id == current_user.id
+    owned_by_me = (
+        risk.risk_owner
+        and risk.risk_owner.strip().lower() == current_user.name.strip().lower()
+    )
+    if not (created_by_me or owned_by_me):
+        abort(403)
+
+
 def _lookup(category):
     """Pull active lookup values for a given category from the database."""
     return [
@@ -44,7 +63,7 @@ def _lookup(category):
 
 def _next_risk_id():
     from flask import current_app
-    prefix = current_app.config.get("RISK_ID_PREFIX", "CR")
+    prefix = current_app.config.get("RISK_ID_PREFIX", "SKR")
     last = (
         db.session.query(Risk.risk_id)
         .filter(Risk.risk_id.like(f"{prefix}-%"))
@@ -163,7 +182,7 @@ def list_risks():
 @risks_bp.route("/<int:risk_pk>")
 @login_required
 def detail(risk_pk):
-    risk = Risk.query.get_or_404(risk_pk)
+    risk = db.get_or_404(Risk, risk_pk)
     audit_entries = risk.audit_log.limit(50).all()
     trend_entries = risk.trend_entries.all()
     vulnerability_findings = risk.vulnerability_findings.all()
@@ -185,10 +204,21 @@ def detail(risk_pk):
 @operator_required
 def new_risk():
     if request.method == "POST":
-        risk = Risk(risk_id=_next_risk_id(), created_by_id=current_user.id)
-        _populate_risk(risk, request.form)
-        db.session.add(risk)
-        db.session.flush()
+        # _next_risk_id reads the last ID and adds one, so two saves at once
+        # can pick the same ID. The unique constraint catches it; retry with
+        # a fresh number instead of returning a 500.
+        for _attempt in range(3):
+            risk = Risk(risk_id=_next_risk_id(), created_by_id=current_user.id)
+            _populate_risk(risk, request.form)
+            db.session.add(risk)
+            try:
+                db.session.flush()
+                break
+            except IntegrityError:
+                db.session.rollback()
+        else:
+            flash("Could not allocate a risk ID. Please save again.", "danger")
+            return redirect(url_for("risks.new_risk"))
         log_audit(risk, current_user, "created")
         _auto_trend_entry(risk)
         db.session.commit()
@@ -204,18 +234,8 @@ def new_risk():
 @risks_bp.route("/<int:risk_pk>/edit", methods=["GET", "POST"])
 @operator_required
 def edit_risk(risk_pk):
-    risk = Risk.query.get_or_404(risk_pk)
-
-    # Operators can edit risks they created, or risks where risk_owner matches their name.
-    # Risks with no owner require admin — no silent fallthrough.
-    if not current_user.is_admin:
-        created_by_me = risk.created_by_id == current_user.id
-        owned_by_me = (
-            risk.risk_owner
-            and risk.risk_owner.strip().lower() == current_user.name.strip().lower()
-        )
-        if not (created_by_me or owned_by_me):
-            abort(403)
+    risk = db.get_or_404(Risk, risk_pk)
+    _require_edit_rights(risk)
 
     if request.method == "POST":
         old = _snapshot(risk)
@@ -234,12 +254,11 @@ def edit_risk(risk_pk):
 
 
 @risks_bp.route("/<int:risk_pk>/delete", methods=["POST"])
-@operator_required
+@admin_required
 def delete_risk(risk_pk):
-    risk = Risk.query.get_or_404(risk_pk)
-    if not current_user.is_admin:
-        abort(403)
+    risk = db.get_or_404(Risk, risk_pk)
     risk_id = risk.risk_id
+    _retire_history(risk)
     db.session.delete(risk)
     db.session.commit()
     flash(f"Risk {risk_id} deleted.", "warning")
@@ -251,7 +270,8 @@ def delete_risk(risk_pk):
 @risks_bp.route("/<int:risk_pk>/trend", methods=["POST"])
 @operator_required
 def add_trend(risk_pk):
-    risk = Risk.query.get_or_404(risk_pk)
+    risk = db.get_or_404(Risk, risk_pk)
+    _require_edit_rights(risk)
     review_date_str = request.form.get("review_date") or str(date.today())
     reviewer = request.form.get("reviewer", current_user.name)
     notes = request.form.get("notes", "")
@@ -297,7 +317,8 @@ def add_vulnerability(risk_pk):
     on the Decision Request exports — this is the source of that data, not
     a field on the export form.
     """
-    risk = Risk.query.get_or_404(risk_pk)
+    risk = db.get_or_404(Risk, risk_pk)
+    _require_edit_rights(risk)
 
     date_found_str = request.form.get("date_found", "").strip()
     try:
@@ -325,7 +346,8 @@ def add_vulnerability(risk_pk):
 @risks_bp.route("/<int:risk_pk>/vulnerability/<int:vuln_pk>/delete", methods=["POST"])
 @operator_required
 def delete_vulnerability(risk_pk, vuln_pk):
-    risk = Risk.query.get_or_404(risk_pk)
+    risk = db.get_or_404(Risk, risk_pk)
+    _require_edit_rights(risk)
     finding = VulnerabilityFinding.query.filter_by(id=vuln_pk, risk_id=risk.id).first_or_404()
     cve = finding.cve_id
     db.session.delete(finding)
@@ -345,7 +367,8 @@ def decision_request(risk_pk):
     auto-filled from the risk record. POST renders the docx and returns it
     as a download; nothing here is written back to the database.
     """
-    risk = Risk.query.get_or_404(risk_pk)
+    risk = db.get_or_404(Risk, risk_pk)
+    _require_edit_rights(risk)
 
     if request.method == "POST":
         ctx = build_context(risk, request.form)
@@ -488,7 +511,8 @@ def _populate_risk(risk: Risk, form):
     risk.remediation_action = form.get("remediation_action", "").strip() or None
     risk.action_owner = form.get("action_owner", "").strip() or None
     risk.due_date = _date("due_date")
-    risk.status = form.get("status", "Open").strip()
+    status = form.get("status", "").strip()
+    risk.status = status if status in STATUSES else (risk.status or "Open")
     risk.date_identified = _date("date_identified") or date.today()
     risk.last_reviewed = _date("last_reviewed")
     risk.review_frequency = form.get("review_frequency", "").strip() or None
@@ -499,7 +523,41 @@ def _populate_risk(risk: Risk, form):
     risk.nist_csf_category = form.get("nist_csf_category", "").strip() or None
     risk.nist_csf_subcategory = form.get("nist_csf_subcategory", "").strip() or None
 
-    risk.updated_at = datetime.now(timezone.utc)
+
+def _retire_history(risk: Risk):
+    """Keep a deleted risk's history, under a key no live risk can ever hold.
+
+    Audit and trend rows are not cascaded on delete (see Risk.audit_log). But
+    SQLite reuses the highest row id once that row is deleted, so leaving the
+    rows on the old id would hand them to the next risk created. Instead:
+
+    1. Write a "deleted" audit entry carrying the readable risk_id.
+    2. Move every audit and trend row for the risk to the negative of that
+       entry's own id. Entry ids are never reused, so the key is unique to
+       this deletion. To read the trail later:
+           SELECT * FROM audit_log WHERE risk_id = -<id of the deleted entry>
+    3. Clear Spotlight links to the risk. Those are plain integers with no
+       foreign key, so after a reuse they would point at the wrong risk.
+       SpotlightElevation.risk_ref keeps the readable reference.
+    """
+    from app.models_spotlight import SpotlightElevation, SpotlightFinding
+
+    entry = AuditLog(risk_id=risk.id, user_id=current_user.id, action="deleted",
+                     field_name="risk_id", old_value=risk.risk_id)
+    db.session.add(entry)
+    db.session.flush()
+    tombstone = -entry.id
+
+    for model in (AuditLog, TrendLog):
+        model.query.filter_by(risk_id=risk.id).update(
+            {"risk_id": tombstone}, synchronize_session=False)
+    vuln_ids = [v.id for v in risk.vulnerability_findings]
+    SpotlightElevation.query.filter_by(risk_id=risk.id).update(
+        {"risk_id": None}, synchronize_session=False)
+    staged = SpotlightFinding.query.filter(
+        db.or_(SpotlightFinding.risk_id == risk.id,
+               SpotlightFinding.vuln_finding_id.in_(vuln_ids or [-1])))
+    staged.update({"risk_id": None, "vuln_finding_id": None}, synchronize_session=False)
 
 
 def _snapshot(risk: Risk) -> dict:
