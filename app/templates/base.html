@@ -251,8 +251,11 @@
   // Jinja escapes as an HTML attribute and which is read here as plain text.
   // Never put a stored value inside an inline submit handler that calls
   // confirm(): the browser decodes &#39; back to a quote before it runs.
+  // A button may carry its own data-confirm (e.g. Delete beside Dismiss in
+  // one form); it takes precedence over the form's.
   document.addEventListener('submit', function (e) {
-    var msg = e.target.getAttribute('data-confirm');
+    var btn = e.submitter;
+    var msg = (btn && btn.getAttribute('data-confirm')) || e.target.getAttribute('data-confirm');
     if (msg && !window.confirm(msg)) { e.preventDefault(); }
   });
 </script>

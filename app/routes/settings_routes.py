@@ -223,7 +223,11 @@ def db_import():
         # An older export predates the Spotlight tables. Create anything
         # missing now, rather than erroring on the ingest pages until the
         # next restart. create_all only adds; it never alters a table.
+        # Then apply the same queue cleanup a restart would: merge duplicate
+        # host+CVE rows and drop findings below the configured severities.
         db.create_all()
+        from app.spotlight.maintenance import dedupe_and_prune
+        dedupe_and_prune(current_app.config.get("SPOTLIGHT_SEVERITIES") or ("CRITICAL", "HIGH"))
         current_app.logger.warning(
             "AUDIT database replaced by %s (user id %s)",
             current_user.username or current_user.email, current_user.id,

@@ -2,13 +2,28 @@
 
 The contract here is narrow and worth stating plainly:
 
-  * Every record is keyed on Spotlight's own finding id. Re-running the sync
-    updates the existing row -- it never creates a second copy. A nightly
-    pull against a 4,000-host tenant should leave the row count flat, not
-    growing by 40,000 a night.
+  * One row per host per CVE. Spotlight issues a separate record for each
+    affected product (Chrome and Edge both vulnerable to one Chromium CVE is
+    two records), so records are keyed on (aid, CVE), not on Spotlight's
+    record id. Every affected product is listed on that one row. Re-running
+    the sync updates the row; it never creates a second copy.
 
-  * A record that Spotlight now reports as closed is marked closed here.
-    It is **not deleted**, because a closed finding that was once elevated
+  * Only the severities in SPOTLIGHT_SEVERITIES (default Critical and High)
+    are stored. This is enforced here on every record, not left to the FQL
+    filter, so a broad filter cannot flood the queue.
+
+  * A host+CVE an operator deleted stays out of the queue while Spotlight
+    keeps reporting it open. If Spotlight stops reporting it and it later
+    comes back, that is a reopen, and it returns as New. See
+    SpotlightDeletion.
+
+  * A finding Spotlight stops reporting is marked closed here, dated the
+    night it disappeared. The default filter fetches only open findings, so
+    a patched CVE does not come back as "closed" -- it just stops coming
+    back. Absence is only trusted from a sync that can prove it: one that
+    used the configured filter, finished every page, and returned at least
+    one record. A record Spotlight returns as closed is marked closed too.
+    Either way the row is **not deleted**, because a closed finding that was once elevated
     into a risk is evidence, and deleting evidence to tidy a queue is how
     you lose the ability to answer a question later.
 
@@ -28,6 +43,7 @@ from datetime import datetime, timezone
 from ..models import db
 from ..models_spotlight import (
     INGEST_NEW,
+    SpotlightDeletion,
     SpotlightFinding,
     SpotlightHost,
     SpotlightSyncRun,
@@ -37,6 +53,18 @@ from .client import FalconSpotlightClient, SpotlightError, parse_ts
 log = logging.getLogger(__name__)
 
 COMMIT_EVERY = 500  # rows between commits -- bounded memory, bounded rollback
+OPEN = ("open", "reopen")
+DEFAULT_SEVERITIES = ("CRITICAL", "HIGH")
+
+
+def record_key(record):
+    """(aid, CVE) for a raw record: the identity of a queue row."""
+    cve = (record.get("cve") or {}).get("id") or record.get("cve_id")
+    return record.get("aid"), cve
+
+
+def record_severity(record):
+    return ((record.get("cve") or {}).get("severity") or "").strip().upper()
 
 
 def _utcnow():
@@ -118,16 +146,24 @@ def upsert_host(record):
 
 
 # -- finding ------------------------------------------------------------------
-def upsert_finding(record, host):
-    """Create or refresh one SpotlightFinding.
+def upsert_finding(record, host, run_seen=None):
+    """Create or refresh the SpotlightFinding for this record's host+CVE.
 
-    Returns (finding, action) where action is 'created', 'updated', or
-    'closed' -- 'closed' meaning the row was already here and this sync is
-    what flipped it out of an open state.
+    Returns (finding, action) where action is 'created', 'updated',
+    'closed' -- the row was already here and this sync is what flipped it
+    out of an open state -- or 'merged': another record for a host+CVE this
+    run already touched, folded into that row.
+
+    run_seen, when given, is a dict shared across one sync run. It lets
+    several records for the same host+CVE (one per affected product) build
+    up one row: the first record in a run resets the product list, later
+    ones add to it, and the row is open if any of its records is open.
+    Without it, each call stands alone.
     """
     spotlight_id = record.get("id")
     if not spotlight_id:
         raise ValueError("record has no id")
+    aid, cve_key = record_key(record)
 
     cve = record.get("cve") or {}
     suppression = record.get("suppression_info") or {}
@@ -135,7 +171,11 @@ def upsert_finding(record, host):
     remediation = record.get("remediation") or {}
     rem_entities = remediation.get("entities") or []
 
-    finding = SpotlightFinding.query.filter_by(spotlight_id=spotlight_id).first()
+    finding = None
+    if aid and cve_key:
+        finding = SpotlightFinding.query.filter_by(aid=aid, cve_id=cve_key).first()
+    if finding is None:
+        finding = SpotlightFinding.query.filter_by(spotlight_id=spotlight_id).first()
     action = "updated"
     if not finding:
         finding = SpotlightFinding(
@@ -180,14 +220,30 @@ def upsert_finding(record, host):
     finding.cisa_due_date = due.date() if due else finding.cisa_due_date
 
     # apps[] is the affected software. Several entries can share one CVE on
-    # one host; join them rather than picking one and losing the rest.
+    # one host, within one record and across records; list them all.
     products = [a.get("product_name_version") for a in apps if a.get("product_name_version")]
-    if products:
-        finding.product_name_version = _join(products, limit=500)
-
     rem_ids = []
     for app in apps:
         rem_ids.extend(((app.get("remediation") or {}).get("ids")) or [])
+
+    key = (aid, cve_key) if aid and cve_key else ("id", spotlight_id)
+    group = None
+    if run_seen is not None:
+        group = run_seen.get(key)
+        if group is None:
+            group = run_seen[key] = {"products": [], "rem_ids": set(), "statuses": set(),
+                                     "first": True}
+        else:
+            group["first"] = False
+        for p in products:
+            if p not in group["products"]:
+                group["products"].append(p)
+        group["rem_ids"].update(rem_ids)
+        group["statuses"].add(record.get("status"))
+        products, rem_ids = group["products"], group["rem_ids"]
+
+    if products:
+        finding.product_name_version = _join(products, limit=500)
     if rem_ids:
         finding.remediation_ids = _join(sorted(set(rem_ids)))
     if rem_entities:
@@ -195,16 +251,28 @@ def upsert_finding(record, host):
         finding.remediation_action = _join([e.get("action") for e in rem_entities], limit=4000)
         finding.remediation_link = _join([e.get("link") for e in rem_entities])
 
-    finding.spotlight_status = record.get("status") or finding.spotlight_status
+    status = record.get("status") or finding.spotlight_status
+    if group is not None:
+        open_statuses = [s for s in group["statuses"] if s in OPEN]
+        if open_statuses:
+            status = "reopen" if "reopen" in open_statuses else "open"
+    finding.spotlight_status = status
     finding.is_suppressed = bool(suppression.get("is_suppressed", finding.is_suppressed))
     finding.suppression_reason = suppression.get("reason") or finding.suppression_reason
 
-    finding.created_timestamp = parse_ts(record.get("created_timestamp")) or finding.created_timestamp
+    # Earliest record wins: the host has been exposed since the first one.
+    created = parse_ts(record.get("created_timestamp"))
+    if created and (not finding.created_timestamp or created < finding.created_timestamp):
+        finding.created_timestamp = created
     finding.updated_timestamp = parse_ts(record.get("updated_timestamp")) or finding.updated_timestamp
-    finding.closed_timestamp = parse_ts(record.get("closed_timestamp")) or finding.closed_timestamp
+    if finding.is_open:
+        finding.closed_timestamp = None   # an open row has no close date
+    else:
+        finding.closed_timestamp = parse_ts(record.get("closed_timestamp")) or finding.closed_timestamp
 
     finding.last_ingested_at = _utcnow()
-    finding.ingest_count = (finding.ingest_count or 0) + 1
+    if group is None or group["first"]:
+        finding.ingest_count = (finding.ingest_count or 0) + 1
     try:
         finding.raw_payload = json.dumps(record)[:200000]
     except (TypeError, ValueError):
@@ -213,6 +281,8 @@ def upsert_finding(record, host):
     # NOTE: ingest_state is intentionally NOT written here. Triage decisions
     # belong to people, and a sync must not undo them.
 
+    if group is not None and not group["first"]:
+        return finding, "merged"
     if action == "updated" and was_open and not finding.is_open:
         action = "closed"
     return finding, action
@@ -236,6 +306,12 @@ def run_sync(app, trigger="scheduled", user_id=None, fql_filter=None, max_pages=
     db.session.add(run)
     db.session.commit()
 
+    severities = tuple(config.get("SPOTLIGHT_SEVERITIES") or DEFAULT_SEVERITIES)
+    deletions = {(d.aid, d.cve_id): d for d in SpotlightDeletion.query.all()}
+    run_seen = {}
+    open_keys = set()
+    below_severity = still_deleted = 0
+
     try:
         client = client_from_config(config)
         pending = 0
@@ -247,19 +323,42 @@ def run_sync(app, trigger="scheduled", user_id=None, fql_filter=None, max_pages=
             for record in resources:
                 run.records_fetched += 1
                 try:
+                    if record_severity(record) not in severities:
+                        below_severity += 1
+                        continue
+                    key = record_key(record)
+                    is_open = record.get("status") in OPEN
+                    if is_open:
+                        open_keys.add(key)
+                    deletion = deletions.get(key)
+                    if deletion is not None:
+                        if not is_open:
+                            deletion.closed_seen_at = deletion.closed_seen_at or _utcnow()
+                            continue
+                        if deletion.closed_seen_at is None:
+                            still_deleted += 1      # deleted, still open: stays gone
+                            continue
+                        # It closed after the deletion and is back: a reopen.
+                        log.info("Spotlight %s on %s reopened after deletion; "
+                                 "returning it to the queue.", key[1], key[0])
+                        db.session.delete(deletion)
+                        deletions.pop(key)
+
                     host, host_created = upsert_host(record)
                     if host_created:
                         run.hosts_created += 1
                     if host is not None and host.id is None:
                         db.session.flush()  # need host.id for the finding FK
 
-                    _finding, action = upsert_finding(record, host)
+                    _finding, action = upsert_finding(record, host, run_seen)
                     if action == "created":
                         run.findings_created += 1
                     elif action == "closed":
                         run.findings_closed += 1
-                    else:
+                    elif action == "updated":
                         run.findings_updated += 1
+                    # "merged": a second record for a row this run already
+                    # counted; counting it again would overstate the work.
                 except Exception as exc:  # noqa: BLE001 -- one bad row, not the run
                     run.parse_errors += 1
                     log.warning("Skipped Spotlight record %s: %s",
@@ -274,13 +373,50 @@ def run_sync(app, trigger="scheduled", user_id=None, fql_filter=None, max_pages=
             pending = 0
             log.info("Spotlight sync page %s: %s records so far", page, run.records_fetched)
 
+        # Closure by absence. The filter fetches open findings only, so a
+        # patched CVE is not reported closed; it stops being reported. That
+        # absence is evidence only from a run that could have seen it: the
+        # configured filter (not a one-off manual one), every page fetched
+        # (not truncated), and at least one record (an empty response is a
+        # hiccup or a broken filter, not proof that everything was fixed).
+        trustworthy = (fql_filter is None
+                       and run.pages_fetched < max_pages
+                       and run.records_fetched > 0)
+        if trustworthy:
+            now = _utcnow()
+            for key, deletion in deletions.items():
+                if key not in open_keys and deletion.closed_seen_at is None:
+                    deletion.closed_seen_at = now
+            for finding in SpotlightFinding.query.filter(
+                    SpotlightFinding.spotlight_status.in_(OPEN)):
+                if (finding.aid, finding.cve_id) not in open_keys:
+                    finding.spotlight_status = "closed"
+                    finding.closed_timestamp = now
+                    run.findings_closed += 1
+        else:
+            log.info("Spotlight sync: closure by absence skipped (%s).",
+                     "manual filter" if fql_filter is not None else
+                     "run hit the page limit" if run.pages_fetched >= max_pages else
+                     "no records returned")
+
         run.status = "success"
         run.finished_at = _utcnow()
         db.session.commit()
+
+        # Push closures onto findings already copied into risks, so a
+        # patched CVE shows Remediated on its risk without anyone clicking
+        # Reconcile. Only ever flips Open -> Remediated; see elevate.py.
+        from .elevate import sync_elevated_statuses
+        remediated = sync_elevated_statuses()
+        if remediated:
+            log.info("Spotlight sync: %s elevated finding(s) marked Remediated.", remediated)
+
         log.info(
-            "Spotlight sync complete: %s fetched, %s new, %s updated, %s closed, %s skipped",
+            "Spotlight sync complete: %s fetched, %s new, %s updated, %s closed, "
+            "%s skipped (unparseable), %s below %s, %s still deleted",
             run.records_fetched, run.findings_created, run.findings_updated,
-            run.findings_closed, run.parse_errors,
+            run.findings_closed, run.parse_errors, below_severity,
+            "/".join(severities), still_deleted,
         )
 
     except SpotlightError as exc:

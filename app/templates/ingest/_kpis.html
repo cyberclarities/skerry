@@ -27,7 +27,8 @@
     {{ last_run.status }}</span>,
   {{ last_run.records_fetched }} record(s) fetched
   {%- if last_run.parse_errors %}, {{ last_run.parse_errors }} skipped{% endif %}.
-  {% if current_user.is_admin %}<a href="{{ url_for('ingest.runs') }}">Sync history</a>{% endif %}
+  {% if current_user.is_admin %}<a href="{{ url_for('ingest.runs') }}">Sync history</a> ·{% endif %}
+  <a href="{{ url_for('ingest.deleted') }}">Deleted findings ({{ totals.deleted }})</a>
 </p>
 {% else %}
 <div class="alert alert-warning py-2 small">

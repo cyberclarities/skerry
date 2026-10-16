@@ -271,6 +271,44 @@ class SpotlightElevation(db.Model):
         return f"<SpotlightElevation {self.scope_label} -> {self.risk_ref}>"
 
 
+class SpotlightDeletion(db.Model):
+    """A host+CVE an operator deleted from the queue as noise.
+
+    The finding row itself is gone; this remembers the decision so tonight's
+    sync does not put it straight back. The rule is "stay gone unless it
+    reopens": while Spotlight keeps reporting the CVE open on that host, the
+    sync skips it. Once Spotlight stops reporting it (closed_seen_at is set)
+    and it later appears again, that is a reopen -- the deletion is lifted and
+    the finding returns to the queue as New.
+    """
+
+    __tablename__ = "spotlight_deletions"
+
+    id = db.Column(db.Integer, primary_key=True)
+    aid = db.Column(db.String(64), nullable=False, index=True)
+    cve_id = db.Column(db.String(50), nullable=False, index=True)
+    hostname = db.Column(db.String(255))       # for people reading the list
+    cve_severity = db.Column(db.String(20))
+    product_name_version = db.Column(db.String(500))
+    reason = db.Column(db.Text)
+
+    deleted_at = db.Column(db.DateTime, default=_utcnow, index=True)
+    deleted_by_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+    # Set when a complete sync with the configured filter no longer returns
+    # this host+CVE, or returns it closed. Until then, a deleted finding that
+    # Spotlight still reports open stays deleted.
+    closed_seen_at = db.Column(db.DateTime)
+
+    deleted_by = db.relationship("User", foreign_keys=[deleted_by_id])
+
+    __table_args__ = (
+        db.UniqueConstraint("aid", "cve_id", name="uq_spotlight_deletion_host_cve"),
+    )
+
+    def __repr__(self):
+        return f"<SpotlightDeletion {self.cve_id} on {self.hostname or self.aid}>"
+
+
 class SpotlightSyncRun(db.Model):
     """One pull from the Falcon API -- what was asked for, what came back.
 

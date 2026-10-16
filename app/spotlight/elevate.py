@@ -161,7 +161,7 @@ def _threat_description(findings, host_names, cves):
             f"Vulnerabilities catalog ({', '.join(sorted(set(kev))[:5])}"
             + (", and others" if len(set(kev)) > 5 else "")
             + "), meaning exploitation has been observed in the wild rather "
-              "than theorised."
+              "than theorized."
         )
     elif exposed:
         parts.append(
@@ -370,7 +370,9 @@ def _apply_form(risk, form, proposal):
         except ValueError:
             risk.due_date = None
 
-    risk.status = text("status", proposal["status"])
+    from app.routes.risk_routes import STATUSES
+    status = text("status", proposal["status"])
+    risk.status = status if status in STATUSES else proposal["status"]
     risk.date_identified = proposal["date_identified"]
     risk.review_frequency = text("review_frequency", "Monthly")
     risk.board_reporting_flag = form.get("board_reporting_flag") in ("on", "true", "1", "yes")

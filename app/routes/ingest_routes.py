@@ -8,6 +8,8 @@ Route map:
     /ingest/cve/<cve_id>     one CVE across hosts, for a widespread issue
     /ingest/elevate          GET the pre-filled form, POST creates the risk
     /ingest/triage           bulk mark Triaged / Dismissed
+    /ingest/delete           bulk delete as noise (remembered; see below)
+    /ingest/deleted          what was deleted, by whom, and whether it can return
     /ingest/sync             manual pull (admin)
     /ingest/runs             sync history
 
@@ -28,14 +30,15 @@ from app.decorators import admin_required, log_audit, operator_required
 from app.models import NISTCSFReference, db
 from app.models_spotlight import (INGEST_DISMISSED, INGEST_ELEVATED, INGEST_NEW,
                                   INGEST_STATES, INGEST_TRIAGED,
-                                  SpotlightElevation, SpotlightFinding,
-                                  SpotlightHost, SpotlightSyncRun)
+                                  SpotlightDeletion, SpotlightElevation,
+                                  SpotlightFinding, SpotlightHost, SpotlightSyncRun)
 from app.routes.auth_routes import _safe_next
 from app.routes.risk_routes import (CONTROL_TYPES, RISK_CATEGORIES, STATUSES,
                                     TREATMENTS, VELOCITIES, _lookup, _next_risk_id)
 from app.scoring import CONTROL_EFFECTIVENESS_LABELS, IMPACT_LABELS, LIKELIHOOD_LABELS
 from app.spotlight import elevate as elevate_mod
 from app.spotlight.ingest import client_from_config, run_sync
+from app.spotlight.maintenance import delete_findings, restore_deletion
 
 ingest_bp = Blueprint("ingest", __name__, url_prefix="/ingest")
 
@@ -367,6 +370,51 @@ def triage():
     return redirect(back)
 
 
+@ingest_bp.route("/delete", methods=["POST"])
+@operator_required
+def delete():
+    """Delete findings as noise. They stay out of the queue while Spotlight
+    keeps reporting them open; if they close and later reappear, they return.
+    Findings attached to a risk are refused: they are that risk's evidence."""
+    ids = request.form.getlist("finding_ids", type=int)
+    reason = (request.form.get("reason") or "").strip()
+    back = _safe_next(request.form.get("back"), url_for("ingest.index"))
+    if not ids:
+        flash("No findings selected.", "warning")
+        return redirect(back)
+
+    deleted, skipped = delete_findings(elevate_mod.selected_findings(ids),
+                                       current_user, reason or None)
+    db.session.commit()
+    message = f"{len(deleted)} finding(s) deleted."
+    if deleted:
+        message += " They will stay out of the queue unless they close and reopen."
+    if skipped:
+        message += (f" {len(skipped)} left in place because they are attached to a "
+                    f"risk; remove them from the risk first.")
+    flash(message, "success" if deleted else "warning")
+    return redirect(back)
+
+
+@ingest_bp.route("/deleted")
+@login_required
+def deleted():
+    rows = SpotlightDeletion.query.order_by(SpotlightDeletion.deleted_at.desc()).all()
+    return render_template("ingest/deleted.html", deletions=rows)
+
+
+@ingest_bp.route("/deleted/<int:deletion_id>/restore", methods=["POST"])
+@operator_required
+def restore(deletion_id):
+    mark = db.get_or_404(SpotlightDeletion, deletion_id)
+    label = f"{mark.cve_id} on {mark.hostname or mark.aid}"
+    restore_deletion(mark)
+    db.session.commit()
+    flash(f"Restored {label}. It returns to the queue on the next sync if "
+          f"Spotlight still reports it.", "success")
+    return redirect(url_for("ingest.deleted"))
+
+
 @ingest_bp.route("/finding/<int:finding_id>/reopen", methods=["POST"])
 @operator_required
 def reopen(finding_id):
@@ -469,6 +517,7 @@ def _totals():
             SpotlightFinding.ingest_state == INGEST_ELEVATED).count(),
         "dismissed": SpotlightFinding.query.filter(
             SpotlightFinding.ingest_state == INGEST_DISMISSED).count(),
+        "deleted": SpotlightDeletion.query.count(),
         "kev": open_q.filter(
             SpotlightFinding.is_cisa_kev.is_(True),
             SpotlightFinding.ingest_state.in_((INGEST_NEW, INGEST_TRIAGED)),

@@ -68,6 +68,15 @@ class Config:
     )
     SPOTLIGHT_PAGE_SIZE = int(os.environ.get("SPOTLIGHT_PAGE_SIZE", 400))
     SPOTLIGHT_SYNC_ENABLED = _flag("SPOTLIGHT_SYNC_ENABLED", "false")
+
+    # Severities the ingest keeps (CVE severity as Spotlight reports it).
+    # Enforced in Skerry on every record, whatever SPOTLIGHT_FQL_FILTER says,
+    # so the queue holds only what someone should act on.
+    SPOTLIGHT_SEVERITIES = tuple(
+        s.strip().upper()
+        for s in os.environ.get("SPOTLIGHT_SEVERITIES", "CRITICAL,HIGH").split(",")
+        if s.strip()
+    )
     SPOTLIGHT_SYNC_HOUR = int(os.environ.get("SPOTLIGHT_SYNC_HOUR", 5))
     SPOTLIGHT_SYNC_MINUTE = int(os.environ.get("SPOTLIGHT_SYNC_MINUTE", 30))
 

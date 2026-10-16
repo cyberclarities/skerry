@@ -25,7 +25,7 @@
 <div class="alert alert-danger py-2 small mb-3">
   Listed in the CISA Known Exploited Vulnerabilities catalog{% if sample.cisa_due_date %},
   federal remediation due {{ sample.cisa_due_date }}{% endif %}. Exploitation of this
-  CVE has been observed, not theorised.
+  CVE has been observed, not theorized.
 </div>
 {% endif %}
 
@@ -71,7 +71,11 @@
             <td><a href="{{ url_for('ingest.host_detail', aid=f.aid) }}"
                    class="text-decoration-none">{{ f.hostname or f.aid }}</a></td>
             <td class="small text-muted">{{ f.host.product_type_desc if f.host else '—' }}</td>
-            <td class="small text-muted">{{ (f.product_name_version or '—')|truncate(50) }}</td>
+            {% set products = (f.product_name_version or '').split(', ') if f.product_name_version else [] %}
+            <td class="small text-muted" title="{{ f.product_name_version or '' }}">
+              {{ (products[0] if products else '—')|truncate(50) }}
+              {%- if products|length > 1 %} <span class="badge bg-light text-dark border">+{{ products|length - 1 }} more</span>{% endif %}
+            </td>
             <td class="text-center">{{ f.days_open if f.days_open is not none else '—' }}d</td>
             <td class="text-center">{{ b.state(f.ingest_state) }}</td>
           </tr>
@@ -86,7 +90,7 @@
     <div class="card-body">
       <div class="row g-2 align-items-end">
         <div class="col-md-5">
-          <label class="form-label small text-muted mb-1">Reason (required to dismiss)</label>
+          <label class="form-label small text-muted mb-1">Reason (required to dismiss; optional to delete)</label>
           <input type="text" name="reason" class="form-control form-control-sm">
         </div>
         <div class="col-md-7 text-md-end">
@@ -98,6 +102,9 @@
                   class="btn btn-sm btn-outline-secondary">Mark triaged</button>
           <button type="submit" formaction="{{ url_for('ingest.triage') }}" name="action" value="dismiss"
                   class="btn btn-sm btn-outline-danger">Dismiss</button>
+          <button type="submit" formaction="{{ url_for('ingest.delete') }}"
+                  data-confirm="Delete the selected findings as noise? They stay out of the queue unless they close in Spotlight and later reopen. Findings attached to a risk are left alone."
+                  class="btn btn-sm btn-danger"><i class="bi bi-trash"></i> Delete</button>
         </div>
       </div>
       <p class="small text-muted mb-0 mt-2">

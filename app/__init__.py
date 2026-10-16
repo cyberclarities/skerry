@@ -120,6 +120,11 @@ def create_app(config_class=Config):
         seed_admin(db, User, app)
         seed_lookup_defaults(db, LookupItem)
 
+        # Spotlight queue upkeep: merge duplicate host+CVE rows and drop
+        # findings below the configured severities. No-op once clean.
+        from .spotlight.maintenance import dedupe_and_prune
+        dedupe_and_prune(app.config.get("SPOTLIGHT_SEVERITIES") or ("CRITICAL", "HIGH"))
+
     # Background scheduler for email notifications and the Spotlight pull
     if app.config.get("SMTP_HOST") or app.config.get("SPOTLIGHT_SYNC_ENABLED"):
         _start_scheduler(app)

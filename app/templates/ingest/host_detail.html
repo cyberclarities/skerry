@@ -104,7 +104,11 @@
               <a href="{{ url_for('ingest.cve_detail', cve_id=f.cve_id) }}"
                  class="text-decoration-none">{{ f.cve_id or '—' }}</a> {{ b.kev(f) }}
             </td>
-            <td class="small text-muted">{{ (f.product_name_version or '—')|truncate(50) }}</td>
+            {% set products = (f.product_name_version or '').split(', ') if f.product_name_version else [] %}
+            <td class="small text-muted" title="{{ f.product_name_version or '' }}">
+              {{ (products[0] if products else '—')|truncate(50) }}
+              {%- if products|length > 1 %} <span class="badge bg-light text-dark border">+{{ products|length - 1 }} more</span>{% endif %}
+            </td>
             <td class="text-center">{{ f.cve_base_score or '—' }}</td>
             <td class="text-center">{{ b.severity(f.cve_severity) }}</td>
             <td class="text-center small">{{ f.exprt_title or '—' }}</td>
@@ -136,7 +140,7 @@
     <div class="card-body">
       <div class="row g-2 align-items-end">
         <div class="col-md-5">
-          <label class="form-label small text-muted mb-1">Reason (required to dismiss)</label>
+          <label class="form-label small text-muted mb-1">Reason (required to dismiss; optional to delete)</label>
           <input type="text" name="reason" class="form-control form-control-sm">
         </div>
         <div class="col-md-7 text-md-end">
@@ -148,6 +152,9 @@
                   class="btn btn-sm btn-outline-secondary">Mark triaged</button>
           <button type="submit" formaction="{{ url_for('ingest.triage') }}" name="action" value="dismiss"
                   class="btn btn-sm btn-outline-danger">Dismiss</button>
+          <button type="submit" formaction="{{ url_for('ingest.delete') }}"
+                  data-confirm="Delete the selected findings as noise? They stay out of the queue unless they close in Spotlight and later reopen. Findings attached to a risk are left alone."
+                  class="btn btn-sm btn-danger"><i class="bi bi-trash"></i> Delete</button>
         </div>
       </div>
     </div>

@@ -19,8 +19,9 @@ So the shape is a queue in front of the register:
 Falcon Spotlight API
         │  nightly pull, FQL-filtered
         ▼
-  spotlight_findings          ← staging. One row per host+CVE. Deduped on
-  spotlight_hosts               Spotlight's own finding id.
+  spotlight_findings          ← staging. One row per host+CVE, Critical and
+  spotlight_hosts               High only. Every affected product is listed
+  spotlight_deletions           on the row. Deletions are remembered.
         │
         │  an operator reviews and decides
         ▼
@@ -118,6 +119,9 @@ FALCON_CLOUD_REGION=us-1
 SPOTLIGHT_FQL_FILTER=status:'open',status:'reopen'
 
 SPOTLIGHT_PAGE_SIZE=400
+
+# Severities kept. Enforced in Skerry on every record, whatever the filter.
+SPOTLIGHT_SEVERITIES=CRITICAL,HIGH
 SPOTLIGHT_SYNC_ENABLED=true
 SPOTLIGHT_SYNC_HOUR=5
 SPOTLIGHT_SYNC_MINUTE=30
@@ -166,9 +170,15 @@ Endpoint: `GET /spotlight/combined/vulnerabilities/v1`, facets `cve`,
 
 | Situation | What happens |
 |---|---|
+| Finding below Critical/High | **Not stored.** Set by `SPOTLIGHT_SEVERITIES`. |
 | Finding seen for the first time | New row, state **New** |
-| Same finding on a later pull | Row updated in place. No duplicate. |
-| Spotlight now reports it closed | `spotlight_status` set to closed. **Row kept.** |
+| Same host+CVE reported for several products | **One row**, listing every affected product. Spotlight issues one record per product; Skerry keys rows on host+CVE, not on Spotlight's record id. |
+| Same finding on a later pull | Row updated in place. No duplicate. Affected products reflect the latest pull. |
+| An operator deleted it, Spotlight still reports it open | **Skipped.** It stays out of the queue. |
+| An operator deleted it, Spotlight stopped reporting it | Marked closed on the Deleted list. If it ever comes back, that is a reopen: it returns as **New**. |
+| Spotlight stops reporting it (patched, host retired, re-rated below High) | Marked **closed**, dated that night, and drops out of the queue. **Row kept.** The default filter fetches open findings only, so this is how a fix shows up. |
+| Spotlight reports it closed | Marked **closed**. **Row kept.** |
+| A closed finding is reported open again | Reopens in place. Its triage state is left alone. |
 | Operator already triaged or dismissed it | Triage state **left alone.** A sync never undoes a human decision. |
 | One malformed record | Counted as skipped, sync continues |
 | Token expires mid-run | Re-authenticates and continues |
@@ -179,10 +189,18 @@ Closed findings are kept, not deleted. A closed finding that was once
 elevated is evidence, and deleting evidence to tidy a queue is how you lose
 the ability to answer a question six months later.
 
-**Reconcile remediated findings** (Spotlight Sync page) pushes Spotlight's
-closures onto the copied register findings — it flips them to *Remediated*
-and touches nothing else. It will not overwrite a severity or a date an
-operator corrected by hand.
+Closing by absence is trusted only from a sync that could have seen the
+finding: the configured filter (not a one-off manual filter), every page
+fetched (not stopped at the page limit), and at least one record returned.
+An empty response is treated as a hiccup or a broken filter, never as proof
+that everything was fixed. The same rule governs deleted findings.
+
+After every successful sync, closures are pushed onto findings already
+copied into risks: they flip to *Remediated*, and nothing else changes. A
+severity or date an operator corrected by hand is never overwritten, and a
+Remediated finding is not flipped back if Spotlight later reopens it; the
+queue shows the reopen, and the operator decides. **Reconcile remediated
+findings** on the Sync page runs the same step on demand.
 
 ---
 
@@ -208,6 +226,27 @@ Then either:
 - **Mark triaged** — looked at, not yet decided.
 - **Dismiss** — needs a reason, and records who and when. A queue where
   things disappear with no reason attached is a queue nobody trusts.
+  The row stays in the queue's history.
+- **Delete** — for noise. The row is removed and the host+CVE is remembered
+  on the **Deleted findings** list (linked under the counters), with who
+  deleted it, when, and the reason if one was given. It stays out while
+  Spotlight keeps reporting it open. If Spotlight stops reporting it and it
+  later reappears, that is a reopen, and it comes back as New. **Restore**
+  on the Deleted list brings it back on the next sync. A finding attached to
+  a risk cannot be deleted; it is that risk's evidence.
+
+"Stopped reporting it" is judged only by a scheduled or default manual sync
+that completes all its pages. A manual sync with a one-off filter, or a run
+that hits the page limit, proves nothing by what it left out.
+
+### 5.1 Upgrading an existing queue
+
+The first start after this version cleans the existing queue once:
+duplicate rows for one host+CVE are merged into one, and findings below
+Critical/High are deleted. When duplicates disagree, the row a person acted
+on survives (elevated, then dismissed, then triaged), and its products list
+gains the others'. Any finding already attached to a risk is kept whatever
+its severity. The cleanup is logged, and it does nothing on later starts.
 
 ---
 
@@ -307,7 +346,7 @@ again is not an error — it is skipped, and you are told how many were.
 | Action | Role |
 |---|---|
 | View the ingest queue | Any logged-in user |
-| Elevate, triage, dismiss | Operator or Admin |
+| Elevate, triage, dismiss, delete, restore | Operator or Admin |
 | Run a sync, test the connection, reconcile | Admin |
 
 Sync is admin-only because it touches an external system with a stored key.

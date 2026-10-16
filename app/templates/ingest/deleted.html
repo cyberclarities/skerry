@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Deleted Findings · Skerry{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('ingest.index') }}">Spotlight Ingest</a> → Deleted findings
+{% endblock %}
+
+{% block content %}
+<h4 class="mb-1">Deleted findings</h4>
+<p class="text-muted small mb-3">
+  Findings deleted from the queue as noise. Each stays out while Spotlight keeps
+  reporting it open. Once Spotlight stops reporting it, a later reappearance is
+  treated as a reopen and it returns to the queue as New. Restore brings one back
+  on the next sync.
+</p>
+
+{% if deletions %}
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0 align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>Host</th><th>CVE</th><th>Severity</th><th>Affected</th>
+          <th>Deleted</th><th>By</th><th>Reason</th><th>Status</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for d in deletions %}
+        <tr>
+          <td>{{ d.hostname or d.aid }}</td>
+          <td><code>{{ d.cve_id }}</code></td>
+          <td>{{ (d.cve_severity or '')|capitalize }}</td>
+          <td class="small">{{ d.product_name_version or '' }}</td>
+          <td class="small text-nowrap">{{ d.deleted_at.strftime('%Y-%m-%d') if d.deleted_at else '' }}</td>
+          <td class="small">{{ d.deleted_by.name if d.deleted_by else '' }}</td>
+          <td class="small">{{ d.reason or '' }}</td>
+          <td class="small">
+            {% if d.closed_seen_at %}
+              <span class="text-success">Closed in Spotlight {{ d.closed_seen_at.strftime('%Y-%m-%d') }}</span>;
+              returns if it reopens
+            {% else %}
+              <span class="text-muted">Still open in Spotlight</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            {% if current_user.is_operator %}
+            <form method="POST" action="{{ url_for('ingest.restore', deletion_id=d.id) }}"
+                  data-confirm="Restore {{ d.cve_id }} on {{ d.hostname or d.aid }}? It returns to the queue on the next sync if Spotlight still reports it.">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-sm btn-outline-secondary">Restore</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="alert alert-light border small">Nothing has been deleted.</div>
+{% endif %}
+{% endblock %}
