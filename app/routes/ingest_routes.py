@@ -70,6 +70,7 @@ def _filters():
         "severity": request.args.get("severity", "").strip(),
         "exprt": request.args.get("exprt", "").strip(),
         "state": request.args.get("state", "").strip(),
+        "ptype": request.args.get("ptype", "").strip(),
         "kev": _flag("kev"),
         "internet": _flag("internet"),
         "include_closed": _flag("include_closed"),
@@ -91,6 +92,11 @@ def _apply_filters(query, f):
         query = query.filter(SpotlightFinding.exprt_rating == f["exprt"].upper())
     if f["state"]:
         query = query.filter(SpotlightFinding.ingest_state == f["state"])
+    if f["ptype"]:
+        typed = db.session.query(SpotlightHost.aid).filter(
+            SpotlightHost.product_type_desc == f["ptype"]
+        )
+        query = query.filter(SpotlightFinding.aid.in_(typed))
     if f["kev"]:
         query = query.filter(SpotlightFinding.is_cisa_kev.is_(True))
     if f["internet"]:
@@ -99,6 +105,22 @@ def _apply_filters(query, f):
         )
         query = query.filter(SpotlightFinding.aid.in_(exposed))
     return query
+
+
+@ingest_bp.context_processor
+def _product_types():
+    """Host types for the filter bar, read from what Spotlight actually sent.
+
+    Built from the data rather than hard-coded, because Falcon's labels
+    (Workstation, Server, Domain Controller) are its vocabulary, not ours.
+    """
+    types = (db.session.query(SpotlightHost.product_type_desc)
+             .filter(SpotlightHost.product_type_desc.isnot(None),
+                     SpotlightHost.product_type_desc != "")
+             .distinct()
+             .order_by(SpotlightHost.product_type_desc)
+             .all())
+    return {"product_types": [t[0] for t in types]}
 
 
 # -- views --------------------------------------------------------------------

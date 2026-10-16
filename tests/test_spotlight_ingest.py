@@ -204,6 +204,37 @@ def test_normalizer_parses_and_skips_bad_rows(ingested):
         assert closed.days_open == (date(2026, 7, 1) - date(2025, 11, 1)).days
 
 
+def test_type_filter_narrows_to_one_host_type(ingested):
+    """The Type dropdown filters on the host's product type, and its options
+    come from the data Spotlight sent rather than a hard-coded list."""
+    app, _ = ingested
+    with app.app_context():
+        from app.models_spotlight import SpotlightFinding, SpotlightHost
+        from app.routes.ingest_routes import _apply_filters, _product_types
+        _load(PAYLOAD["resources"])
+
+        blank = {"q": "", "severity": "", "exprt": "", "state": "", "ptype": "",
+                 "kev": False, "internet": False}
+        everything = _apply_filters(SpotlightFinding.query, blank).count()
+
+        types = _product_types()["product_types"]
+        assert types == sorted({h.product_type_desc for h in SpotlightHost.query
+                                if h.product_type_desc})
+
+        total = 0
+        for t in types:
+            narrowed = _apply_filters(SpotlightFinding.query, dict(blank, ptype=t)).all()
+            aids = {h.aid for h in SpotlightHost.query.filter_by(product_type_desc=t)}
+            assert narrowed and all(f.aid in aids for f in narrowed)
+            total += len(narrowed)
+        # every finding with a host lands under exactly one type
+        assert total == everything - SpotlightFinding.query.filter(
+            SpotlightFinding.aid.is_(None)).count()
+
+        assert _apply_filters(SpotlightFinding.query,
+                              dict(blank, ptype="No Such Type")).count() == 0
+
+
 def test_resync_updates_rather_than_duplicates(ingested):
     app, _ = ingested
     with app.app_context():

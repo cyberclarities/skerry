@@ -32,4 +32,8 @@ RUN addgroup -S -g 10001 skerry \
 EXPOSE 5000
 
 ENTRYPOINT ["sh", "/app/docker-entrypoint.sh"]
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-5000} --workers 1 --timeout 120 'run:app'"]
+# GUNICORN_TIMEOUT is long on purpose. A manual Spotlight sync runs inside the
+# request, and a large tenant takes far longer than gunicorn's default to pull.
+# At 120s the worker was killed mid-sync. This is a stopgap until the sync moves
+# to a background job.
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-5000} --workers 1 --timeout ${GUNICORN_TIMEOUT:-1800} 'run:app'"]
