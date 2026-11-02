@@ -41,6 +41,7 @@
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   {% for f in findings %}<input type="hidden" name="finding_ids" value="{{ f.id }}">{% endfor %}
   <input type="hidden" name="scope_label" value="{{ proposal.scope_label }}">
+  <input type="hidden" name="confirm_elevate" value="1">
 
   <div class="card shadow-sm mb-3">
     <div class="card-header bg-white py-2"><strong class="small">Identification</strong></div>

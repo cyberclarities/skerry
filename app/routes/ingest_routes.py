@@ -19,11 +19,12 @@ admin-only, because those touch an external system with a stored key.
 """
 
 from datetime import date
+from math import ceil
 
 from flask import (Blueprint, abort, flash, jsonify, redirect, render_template,
                    request, url_for)
 from flask_login import current_user, login_required
-from sqlalchemy import func, or_
+from sqlalchemy import case, func, or_
 from sqlalchemy.exc import IntegrityError
 
 from app.decorators import admin_required, log_audit, operator_required
@@ -257,6 +258,134 @@ def cve_detail(cve_id):
     )
 
 
+# -- CVE rollup ---------------------------------------------------------------
+AGE_OPTIONS = (0, 30, 60, 90, 180)
+DEFAULT_MIN_AGE = 60
+CVES_PER_PAGE = 100
+RANK_TITLE = {4: "Critical", 3: "High", 2: "Medium", 1: "Low"}
+CVE_SORTS = {
+    # oldest exposure first, then known-exploited, then score
+    "age": lambda r: (r["age"] if r["age"] is not None else -1, r["kev"], r["cvss"] or 0),
+    "risk": lambda r: (r["kev"], r["exprt_rank"], r["cvss"] or 0, r["hosts"]),
+    "hosts": lambda r: (r["hosts"], r["kev"], r["cvss"] or 0),
+}
+
+
+def _rank(column):
+    """Severity words to numbers, so MAX() means worst rather than alphabetical."""
+    return func.max(case(
+        (func.upper(column) == "CRITICAL", 4),
+        (func.upper(column) == "HIGH", 3),
+        (func.upper(column) == "MEDIUM", 2),
+        (func.upper(column) == "LOW", 1),
+        else_=0,
+    ))
+
+
+@ingest_bp.route("/cves")
+@login_required
+def cves():
+    """One row per CVE, oldest exposure first. The review step before elevation.
+
+    Age is how long the CVE has been open on our hosts: today minus the
+    earliest Spotlight created_timestamp across its findings. That is the
+    exposure window we own. The publish date is shown beside it, but a CVE
+    published two years ago that landed on a new server last week is a
+    last-week problem, not a two-year one.
+
+    The grouping runs in SQL. Pulling every finding into Python to count
+    them is what took the host view down on a large tenant.
+    """
+    f = _filters()
+    min_age = request.args.get("min_age", DEFAULT_MIN_AGE, type=int)
+    if min_age < 0:
+        min_age = 0
+    sort = request.args.get("sort", "age")
+    if sort not in CVE_SORTS:
+        sort = "age"
+
+    query = (
+        _apply_filters(_base_query(f["include_closed"], f["include_handled"]), f)
+        .filter(SpotlightFinding.cve_id.isnot(None))
+        .with_entities(
+            SpotlightFinding.cve_id.label("cve_id"),
+            func.count(SpotlightFinding.id).label("findings"),
+            func.count(func.distinct(SpotlightFinding.aid)).label("hosts"),
+            func.max(SpotlightFinding.cve_base_score).label("cvss"),
+            _rank(SpotlightFinding.cve_severity).label("sev_rank"),
+            _rank(SpotlightFinding.exprt_rating).label("exprt_rank"),
+            func.max(case((SpotlightFinding.is_cisa_kev.is_(True), 1), else_=0)).label("kev"),
+            func.max(SpotlightFinding.exploit_status).label("exploit_status"),
+            func.min(SpotlightFinding.created_timestamp).label("oldest"),
+            func.min(SpotlightFinding.cve_published_date).label("published"),
+            func.min(SpotlightFinding.cisa_due_date).label("cisa_due"),
+            func.max(SpotlightFinding.product_name_version).label("product"),
+        )
+        .group_by(SpotlightFinding.cve_id)
+    )
+
+    today = date.today()
+    shown, hidden = [], 0
+    for r in query.all():
+        age = (today - r.oldest.date()).days if r.oldest else None
+        # Unknown age cannot be shown to be over the line, so it waits with
+        # the younger ones rather than jumping the queue.
+        if min_age and (age is None or age < min_age):
+            hidden += 1
+            continue
+        shown.append({
+            "cve_id": r.cve_id,
+            "findings": r.findings,
+            "hosts": r.hosts,
+            "cvss": r.cvss,
+            "severity": RANK_TITLE.get(r.sev_rank),
+            "exprt": RANK_TITLE.get(r.exprt_rank),
+            "exprt_rank": r.exprt_rank or 0,
+            "kev": r.kev or 0,
+            "exploit_status": r.exploit_status,
+            "age": age,
+            "published": r.published.date() if r.published else None,
+            "cisa_due": r.cisa_due,
+            "product": (r.product or "").split(", ")[0] or None,
+        })
+    shown.sort(key=CVE_SORTS[sort], reverse=True)
+
+    page = max(request.args.get("page", 1, type=int), 1)
+    pages = max(ceil(len(shown) / CVES_PER_PAGE), 1)
+    page = min(page, pages)
+    rows = shown[(page - 1) * CVES_PER_PAGE: page * CVES_PER_PAGE]
+
+    # Links carry the operator's filters. The CVE page gets the host filters
+    # (type, internet-facing, and so on) but not the rollup's own age, sort,
+    # and page, which mean nothing inside one CVE.
+    args = {k: v for k, v in request.args.items()}
+    carry = {k: v for k, v in args.items() if k not in ("min_age", "sort", "page")}
+
+    def page_url(p):
+        return url_for("ingest.cves", **{**args, "page": p})
+
+    return render_template(
+        "ingest/cves.html",
+        rows=rows,
+        total_shown=len(shown),
+        total_findings=sum(r["findings"] for r in shown),
+        hidden=hidden,
+        min_age=min_age,
+        age_options=AGE_OPTIONS,
+        sort=sort,
+        sort_links={s: url_for("ingest.cves", **{**args, "sort": s, "page": 1})
+                    for s in CVE_SORTS},
+        carry=carry,
+        page=page,
+        pages=pages,
+        page_url=page_url,
+        filters=f,
+        totals=_totals(),
+        last_run=_last_run(),
+        states=INGEST_STATES,
+    )
+
+
 # -- elevation ----------------------------------------------------------------
 @ingest_bp.route("/elevate", methods=["GET", "POST"])
 @operator_required
@@ -285,7 +414,10 @@ def elevate():
         flash("Every finding selected has already been elevated.", "info")
         return redirect(url_for("ingest.index"))
 
-    if request.method == "POST":
+    # A POST from the host, CVE, or finding pages carries only the selection.
+    # It opens the pre-filled form for review. Only the form itself, which
+    # carries confirm_elevate, creates the risk.
+    if request.method == "POST" and request.form.get("confirm_elevate") == "1":
         try:
             risk, elevation, skipped = elevate_mod.elevate(
                 findings, request.form, current_user, _next_risk_id()

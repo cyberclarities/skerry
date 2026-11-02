@@ -215,14 +215,14 @@ Three routes into a decision:
 
 - **Host view → Review.** The normal case. One host's open findings become
   one risk.
-- **CVE view.** Click any CVE to see every host it affects. This is the path
-  for a widely-discovered issue: one CVE, many hosts, one risk.
+- **CVE view.** One row per CVE, longest-open first. See 5.1.
 - **Finding view.** A flat filterable list. Select any rows and elevate the
   selection.
 
 Then either:
 
-- **Elevate** — opens a pre-filled risk form.
+- **Elevate** — opens a pre-filled risk form. Nothing is written until you
+  press **Create** on that form.
 - **Mark triaged** — looked at, not yet decided.
 - **Dismiss** — needs a reason, and records who and when. A queue where
   things disappear with no reason attached is a queue nobody trusts.
@@ -239,7 +239,34 @@ Then either:
 that completes all its pages. A manual sync with a one-off filter, or a run
 that hits the page limit, proves nothing by what it left out.
 
-### 5.1 Upgrading an existing queue
+### 5.1 Working by CVE
+
+The **CVE view** button on the host or finding view groups the queue by CVE.
+This is the path for a widely-discovered issue: one CVE, many hosts, one risk.
+
+Age is how long the CVE has been open on our hosts, counted from the earliest
+finding Spotlight has for it. That is the exposure window we own. The CVE's
+publish date shows beside it, but a CVE published two years ago that landed
+on a new server last week is a last-week problem.
+
+By default the view shows CVEs open **60 days or more**, oldest first, and
+says how many younger ones it is holding back. The **Open on our hosts**
+filter changes the line (any age, 30, 60, 90, 180 days). The column headers
+re-sort by host count, or by risk (KEV, then ExPRT.AI, then CVSS, then host
+count). Every other filter, Type and Internet-facing included, applies and
+carries through to the CVE page.
+
+**Review** opens the CVE: its description, scores, KEV status, and every
+affected host. Uncheck any host that does not belong, then **Elevate**. When
+the selection is a single CVE, the risk form is built from that CVE's own
+data: the threat description names the CVE, the affected software, the host
+count and types, the ratings, the publish date, the published description,
+KEV status with the CISA deadline, and the longest-open host. The
+vulnerability detail carries the CVSS vector, exploit status, the affected
+software, and each host with its type and days open. All of it is editable
+before you create the risk.
+
+### 5.2 Upgrading an existing queue
 
 The first start after this version cleans the existing queue once:
 duplicate rows for one host+CVE are merged into one, and findings below

@@ -12,6 +12,9 @@
     </p>
   </div>
   <div>
+    <a href="{{ url_for('ingest.cves', **request.args) }}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-bug"></i> CVE view
+    </a>
     <a href="{{ url_for('ingest.findings', **request.args) }}" class="btn btn-sm btn-outline-secondary">
       <i class="bi bi-list-ul"></i> Finding view
     </a>

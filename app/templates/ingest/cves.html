@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% import "ingest/_badges.html" as b %}
+{% block title %}Spotlight CVEs · Skerry{% endblock %}
+{% block breadcrumb %}Spotlight Ingest → CVEs{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="mb-0">Spotlight CVEs</h4>
+    <p class="text-muted small mb-0">
+      One row per CVE, longest-open first. Open a CVE to review the hosts it touches,
+      then elevate it as one risk.
+    </p>
+  </div>
+  <div>
+    <a href="{{ url_for('ingest.index', **carry) }}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-hdd-network"></i> Host view
+    </a>
+    <a href="{{ url_for('ingest.findings', **carry) }}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-list-ul"></i> Finding view
+    </a>
+  </div>
+</div>
+
+{% include "ingest/_kpis.html" %}
+{% include "ingest/_filters.html" %}
+
+<p class="small text-muted mb-2">
+  {{ total_shown }} CVE(s), {{ total_findings }} finding(s)
+  {%- if min_age %}, open {{ min_age }}+ days on our hosts{% endif %}.
+  {% if hidden %}
+    {{ hidden }} younger CVE(s) not shown;
+    <a href="{{ url_for('ingest.cves', **dict(carry, min_age=0, sort=sort)) }}">show all ages</a>.
+  {% endif %}
+</p>
+
+{% if not rows %}
+  <div class="alert alert-light border">No CVEs match these filters.</div>
+{% else %}
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0 align-middle">
+      <thead>
+        <tr>
+          <th>CVE</th>
+          <th>Product</th>
+          <th class="text-center">Severity</th>
+          <th class="text-center">CVSS</th>
+          <th class="text-center">ExPRT.AI</th>
+          <th class="text-center">KEV</th>
+          <th class="text-center">
+            <a href="{{ sort_links.hosts }}" class="text-decoration-none {{ 'fw-bold' if sort == 'hosts' }}">Hosts</a>
+          </th>
+          <th class="text-center">
+            <a href="{{ sort_links.age }}" class="text-decoration-none {{ 'fw-bold' if sort == 'age' }}"
+               title="Days since Spotlight first found this CVE on any of our hosts">Open</a>
+          </th>
+          <th class="text-center">Published</th>
+          <th class="text-end">
+            <a href="{{ sort_links.risk }}" class="small text-decoration-none {{ 'fw-bold' if sort == 'risk' }}"
+               title="Sort by KEV, ExPRT.AI, CVSS, then host count">Sort by risk</a>
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td class="fw-semibold">
+            <a href="{{ url_for('ingest.cve_detail', cve_id=r.cve_id, **carry) }}" class="text-decoration-none">
+              {{ r.cve_id }}</a>
+          </td>
+          <td class="small text-muted" title="{{ r.product or '' }}">{{ (r.product or '—')|truncate(40) }}</td>
+          <td class="text-center">{{ b.severity(r.severity) }}</td>
+          <td class="text-center">{{ '%.1f'|format(r.cvss) if r.cvss else '—' }}</td>
+          <td class="text-center">{{ b.severity(r.exprt) }}</td>
+          <td class="text-center">
+            {% if r.kev %}<span class="badge bg-danger"
+              title="{{ 'CISA due ' ~ r.cisa_due if r.cisa_due else 'CISA Known Exploited Vulnerabilities catalog' }}">KEV</span>{% endif %}
+          </td>
+          <td class="text-center">{{ r.hosts }}</td>
+          <td class="text-center">
+            {% if r.age is not none %}
+              <span class="{{ 'text-danger fw-semibold' if r.age > 90 }}">{{ r.age }}d</span>
+            {% else %}—{% endif %}
+          </td>
+          <td class="text-center small text-muted">{{ r.published or '—' }}</td>
+          <td class="text-end">
+            <a href="{{ url_for('ingest.cve_detail', cve_id=r.cve_id, **carry) }}"
+               class="btn btn-sm btn-outline-primary">Review</a>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if pages > 1 %}
+<nav class="mt-3">
+  <ul class="pagination pagination-sm">
+    {% for p in range(1, pages + 1) %}
+      <li class="page-item {{ 'active' if p == page }}">
+        <a class="page-link" href="{{ page_url(p) }}">{{ p }}</a></li>
+    {% endfor %}
+  </ul>
+</nav>
+{% endif %}
+{% endif %}
+{% endblock %}

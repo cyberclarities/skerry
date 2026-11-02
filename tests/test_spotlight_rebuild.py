@@ -178,7 +178,8 @@ def test_findings_on_a_risk_cannot_be_deleted(app, monkeypatch):
         ids = [f.id for f in SpotlightFinding.query]
     c = app.test_client()
     _login(c)
-    c.post("/ingest/elevate", data={"finding_ids": ids, "likelihood": "4", "impact": "4"})
+    c.post("/ingest/elevate", data={"finding_ids": ids, "confirm_elevate": "1",
+                                    "likelihood": "4", "impact": "4"})
     resp = c.post("/ingest/delete", data={"finding_ids": ids}, follow_redirects=True)
     assert b"attached to a" in resp.data
     assert len(rows(app)) == 1
@@ -323,7 +324,8 @@ def test_risk_shows_remediated_without_anyone_clicking_reconcile(app, monkeypatc
         fid = SpotlightFinding.query.filter_by(cve_id=CVE).one().id
     c = app.test_client()
     _login(c)
-    c.post("/ingest/elevate", data={"finding_ids": [fid], "likelihood": "4", "impact": "4"})
+    c.post("/ingest/elevate", data={"finding_ids": [fid], "confirm_elevate": "1",
+                                    "likelihood": "4", "impact": "4"})
     sync(app, monkeypatch, [_other()])
     with app.app_context():
         assert VulnerabilityFinding.query.filter_by(cve_id=CVE).one().status == "Remediated"
@@ -359,7 +361,8 @@ def test_elevation_rejects_unknown_status(app, monkeypatch):
         fid = SpotlightFinding.query.one().id
     c = app.test_client()
     _login(c)
-    c.post("/ingest/elevate", data={"finding_ids": [fid], "likelihood": "3", "impact": "3",
+    c.post("/ingest/elevate", data={"finding_ids": [fid], "confirm_elevate": "1",
+                                    "likelihood": "3", "impact": "3",
                                     "status": "Pwned"})
     with app.app_context():
         assert Risk.query.one().status == "Open"

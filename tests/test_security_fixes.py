@@ -484,7 +484,8 @@ def test_1_1_deleted_risk_does_not_leave_spotlight_links_dangling(app):
 
     c = app.test_client()
     _login(c)
-    c.post("/ingest/elevate", data={"finding_ids": ids, "likelihood": "4", "impact": "4"})
+    c.post("/ingest/elevate", data={"finding_ids": ids, "confirm_elevate": "1",
+                                    "likelihood": "4", "impact": "4"})
     with app.app_context():
         pk = Risk.query.one().id
     c.post(f"/risks/{pk}/delete")

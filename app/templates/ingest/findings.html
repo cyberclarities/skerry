@@ -11,9 +11,14 @@
       Select rows to elevate as one risk, or to triage in bulk.
     </p>
   </div>
-  <a href="{{ url_for('ingest.index', **request.args) }}" class="btn btn-sm btn-outline-secondary">
-    <i class="bi bi-hdd-network"></i> Host view
-  </a>
+  <div>
+    <a href="{{ url_for('ingest.cves', **request.args) }}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-bug"></i> CVE view
+    </a>
+    <a href="{{ url_for('ingest.index', **request.args) }}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-hdd-network"></i> Host view
+    </a>
+  </div>
 </div>
 
 {% include "ingest/_kpis.html" %}

@@ -2,7 +2,8 @@
 {% import "ingest/_badges.html" as b %}
 {% block title %}{{ cve_id }} · Spotlight Ingest{% endblock %}
 {% block breadcrumb %}
-  <a href="{{ url_for('ingest.index') }}">Spotlight Ingest</a> → {{ cve_id }}
+  <a href="{{ url_for('ingest.index') }}">Spotlight Ingest</a> →
+  <a href="{{ url_for('ingest.cves') }}">CVEs</a> → {{ cve_id }}
 {% endblock %}
 
 {% block content %}

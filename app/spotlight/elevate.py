@@ -21,6 +21,7 @@ Two things this module refuses to do:
 """
 
 import logging
+from collections import Counter
 from datetime import date, datetime, timezone
 
 from ..models import Risk, VulnerabilityFinding, db
@@ -103,8 +104,12 @@ def build_proposal(findings):
         "suggestion_rationale": rationale,
         "risk_category": "Infrastructure",
         "asset_system": _asset_system(host_names),
-        "threat_description": _threat_description(findings, host_names, cves),
-        "vulnerability_detail": _vulnerability_detail(findings),
+        "threat_description": (
+            _cve_threat_description(findings, host_names, hosts) if len(cves) == 1
+            else _threat_description(findings, host_names, cves)),
+        "vulnerability_detail": (
+            _cve_vulnerability_detail(findings, hosts) if len(cves) == 1
+            else _vulnerability_detail(findings)),
         "threat_intel_source": "CrowdStrike Falcon Spotlight",
         "assurance_source": "Vulnerability Scan",
         "control_type": "Preventive",
@@ -177,6 +182,189 @@ def _threat_description(findings, host_names, cves):
         "already there."
     )
     return " ".join(parts)
+
+
+# -- one CVE: build the risk out of the CVE's own data -------------------------
+CLOSING_LINE = (
+    "Unpatched software on a reachable host is the entry point an attacker "
+    "uses first, because it needs no one to make a mistake. The flaw is "
+    "already there."
+)
+
+
+def _long_date(value):
+    if not value:
+        return None
+    d = value.date() if hasattr(value, "date") else value
+    return f"{d:%B} {d.day}, {d.year}"
+
+
+def _plural(count, word):
+    return f"{count} {word}" + ("" if count == 1 else "s")
+
+
+def _lead_finding(findings):
+    """The record that speaks for the CVE: KEV first, then the highest score.
+
+    Severity, ExPRT, and the description are CVE-level in Spotlight, so any
+    row would do. Picking deliberately means a row with missing facets never
+    ends up as the voice of the risk.
+    """
+    return max(findings, key=lambda f: (bool(f.is_cisa_kev), f.cve_base_score or 0,
+                                        bool(f.cve_description)))
+
+
+def _products(findings, limit=None):
+    seen = []
+    for f in findings:
+        for p in (f.product_name_version or "").split(", "):
+            if p and p not in seen:
+                seen.append(p)
+    return seen[:limit] if limit else seen
+
+
+def _host_types(findings, hosts):
+    by_aid = {h.aid: h for h in hosts}
+    counts = Counter()
+    for aid in {f.aid for f in findings if f.aid}:
+        host = by_aid.get(aid)
+        if host and host.product_type_desc:
+            counts[host.product_type_desc] += 1
+    return counts
+
+
+def _cve_threat_description(findings, host_names, hosts):
+    """Plain-language summary for a single-CVE risk, built from the CVE itself.
+
+    Written for someone non-technical: what is affected, how bad, whether
+    anyone is actually using it, and how long we have carried it.
+    """
+    lead = _lead_finding(findings)
+    cve = lead.cve_id
+    open_count = len([f for f in findings if f.is_open])
+    where = host_names[0] if len(host_names) == 1 else f"{len(host_names)} hosts"
+
+    products = _products(findings, limit=3)
+    if not products:
+        what = "affected software"
+    elif len(products) == 1:
+        what = products[0]
+    else:
+        what = ", ".join(products[:-1]) + " and " + products[-1]
+    sentence = f"{cve} affects {what} on {where}"
+    types = _host_types(findings, hosts)
+    if len(host_names) > 1 and types:
+        sentence += " (" + ", ".join(
+            _plural(n, t) for t, n in types.most_common()) + ")"
+    parts = [sentence + f", with {_plural(open_count, 'open finding')} in "
+                        f"CrowdStrike Falcon Spotlight."]
+
+    rating = []
+    if lead.severity_title:
+        rating.append(f"rated {lead.severity_title}")
+    if lead.cve_base_score:
+        rating.append(f"CVSS {lead.cve_base_score}")
+    if lead.exprt_title:
+        rating.append(f"ExPRT.AI {lead.exprt_title}")
+    if rating:
+        parts.append("The CVE is " + ", ".join(rating) + ".")
+
+    published = _long_date(lead.cve_published_date)
+    if published:
+        parts.append(f"It was published on {published}.")
+
+    if lead.cve_description:
+        parts.append(f"Published description: {lead.cve_description.strip()}")
+
+    if any(f.is_cisa_kev for f in findings):
+        kev = ("It is listed in the CISA Known Exploited Vulnerabilities catalog, "
+               "meaning exploitation has been observed in the wild rather than theorized.")
+        due = min((f.cisa_due_date for f in findings if f.cisa_due_date), default=None)
+        if due:
+            kev += f" CISA set {_long_date(due)} as the remediation deadline for federal agencies."
+        parts.append(kev)
+    else:
+        status = max((f.exploit_status or 0 for f in findings), default=0)
+        if status >= 30:
+            label = {30: "Available", 60: "Easily accessible", 90: "Actively used"}.get(
+                status, lead.exploit_status_label)
+            parts.append(f"CrowdStrike's exploit status for this CVE is '{label}'.")
+
+    oldest = max((f.days_open for f in findings if f.days_open is not None), default=None)
+    if oldest is not None:
+        parts.append(f"The longest-affected host has carried it for {oldest} days.")
+
+    parts.append(CLOSING_LINE)
+    return " ".join(parts)
+
+
+def _cve_vulnerability_detail(findings, hosts, host_limit=MAX_CVES_IN_SUMMARY):
+    """The technical evidence block for a single-CVE risk."""
+    lead = _lead_finding(findings)
+    lines = [lead.cve_id]
+
+    score = []
+    if lead.cve_base_score:
+        score.append(f"CVSS {lead.cve_base_score}")
+    if lead.severity_title:
+        score.append(lead.severity_title)
+    if score:
+        lines.append(" | ".join(score))
+    if lead.cve_vector:
+        lines.append(f"Vector: {lead.cve_vector}")
+    if lead.exprt_title:
+        lines.append(f"ExPRT.AI rating: {lead.exprt_title}")
+    status = max((f.exploit_status for f in findings if f.exploit_status is not None),
+                 default=None)
+    if status is not None:
+        lines.append("Exploit status: " + {0: "Unproven", 30: "Available",
+                                            60: "Easily accessible",
+                                            90: "Actively used"}.get(status, "Unknown"))
+    if any(f.is_cisa_kev for f in findings):
+        due = min((f.cisa_due_date for f in findings if f.cisa_due_date), default=None)
+        lines.append("CISA KEV: Yes" + (f", federal due date {due.isoformat()}" if due else ""))
+    else:
+        lines.append("CISA KEV: No")
+    if lead.cve_published_date:
+        lines.append(f"Published: {lead.cve_published_date.date().isoformat()}")
+
+    products = _products(findings)
+    if products:
+        lines.append("")
+        lines.append("Affected software:")
+        lines.extend(f"- {p}" for p in products[:15])
+        if len(products) > 15:
+            lines.append(f"- ... and {len(products) - 15} more")
+
+    by_aid = {h.aid: h for h in hosts}
+    ordered = sorted(findings, key=lambda f: f.days_open or 0, reverse=True)
+    lines.append("")
+    lines.append(f"Affected hosts ({len({f.aid or f.hostname for f in findings})}):")
+    seen = set()
+    shown = 0
+    for f in ordered:
+        key = f.aid or f.hostname
+        if key in seen:
+            continue
+        seen.add(key)
+        if shown >= host_limit:
+            continue
+        host = by_aid.get(f.aid)
+        bits = [f.hostname or f.aid or "Unknown host"]
+        if host and host.product_type_desc:
+            bits.append(host.product_type_desc)
+        if f.days_open is not None:
+            bits.append(f"open {f.days_open} days")
+        lines.append("- " + " | ".join(bits))
+        shown += 1
+    if len(seen) > shown:
+        lines.append(f"- ... and {len(seen) - shown} further host(s); "
+                     f"the full list is on the linked findings.")
+
+    lines.append("")
+    lines.append("Source: CrowdStrike Falcon Spotlight, "
+                 "/spotlight/combined/vulnerabilities/v1.")
+    return "\n".join(lines)
 
 
 def _vulnerability_detail(findings):
