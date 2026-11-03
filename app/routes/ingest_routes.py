@@ -38,14 +38,15 @@ from app.routes.risk_routes import (CONTROL_TYPES, RISK_CATEGORIES, STATUSES,
                                     TREATMENTS, VELOCITIES, _lookup, _next_risk_id)
 from app.scoring import CONTROL_EFFECTIVENESS_LABELS, IMPACT_LABELS, LIKELIHOOD_LABELS
 from app.spotlight import elevate as elevate_mod
-from app.spotlight.ingest import client_from_config, run_sync
+from app.spotlight.client import SpotlightError
+from app.spotlight.ingest import OPEN as OPEN_STATUSES
+from app.spotlight.ingest import client_from_config, run_sync, start_background_sync
 from app.spotlight.maintenance import delete_findings, restore_deletion
 
 ingest_bp = Blueprint("ingest", __name__, url_prefix="/ingest")
 
-OPEN_STATUSES = ("open", "reopen")
-SEVERITY_ORDER = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1, "NONE": 0}
 MAX_SELECTION = 2000  # guardrail: one risk covering 2000 findings is a mistake
+ROWS_PER_PAGE = 100   # host, CVE, and deleted-findings lists
 
 
 def _base_query(include_closed=False, include_handled=False):
@@ -64,21 +65,29 @@ def _base_query(include_closed=False, include_handled=False):
     return query
 
 
-def _flag(name):
-    return request.args.get(name, "") in ("1", "true", "on", "yes")
+def _flag(name, source=None):
+    source = request.args if source is None else source
+    return source.get(name, "") in ("1", "true", "on", "yes")
 
 
-def _filters():
+def _filters(source=None):
+    """The queue filters, read from the query string by default.
+
+    A bulk action passes request.form instead, so the server re-applies the
+    exact filters the operator was looking at rather than trusting a list
+    of row ids built in the browser.
+    """
+    src = request.args if source is None else source
     return {
-        "q": request.args.get("q", "").strip(),
-        "severity": request.args.get("severity", "").strip(),
-        "exprt": request.args.get("exprt", "").strip(),
-        "state": request.args.get("state", "").strip(),
-        "ptype": request.args.get("ptype", "").strip(),
-        "kev": _flag("kev"),
-        "internet": _flag("internet"),
-        "include_closed": _flag("include_closed"),
-        "include_handled": _flag("include_handled"),
+        "q": src.get("q", "").strip(),
+        "severity": src.get("severity", "").strip(),
+        "exprt": src.get("exprt", "").strip(),
+        "state": src.get("state", "").strip(),
+        "ptype": src.get("ptype", "").strip(),
+        "kev": _flag("kev", src),
+        "internet": _flag("internet", src),
+        "include_closed": _flag("include_closed", src),
+        "include_handled": _flag("include_handled", src),
     }
 
 
@@ -131,51 +140,76 @@ def _product_types():
 @ingest_bp.route("/")
 @login_required
 def index():
-    """Host rollup. One row per host, worst-first -- the default working view."""
+    """Host rollup. One row per host, worst-first -- the default working view.
+
+    The counting runs in SQL, one row per host. Loading every finding into
+    Python to count them is what took this page down on a large tenant.
+    """
     f = _filters()
-    query = _apply_filters(
-        _base_query(f["include_closed"], f["include_handled"]), f
+    sev = func.upper(SpotlightFinding.cve_severity)
+    query = (
+        _apply_filters(_base_query(f["include_closed"], f["include_handled"]), f)
+        .filter(SpotlightFinding.aid.isnot(None))
+        .with_entities(
+            SpotlightFinding.aid.label("aid"),
+            func.count(SpotlightFinding.id).label("count"),
+            func.sum(case((sev == "CRITICAL", 1), else_=0)).label("critical"),
+            func.sum(case((sev == "HIGH", 1), else_=0)).label("high"),
+            func.sum(case((SpotlightFinding.is_cisa_kev.is_(True), 1), else_=0)).label("kev"),
+            _rank(SpotlightFinding.cve_severity).label("worst_rank"),
+            func.max(SpotlightFinding.cve_base_score).label("max_cvss"),
+            func.min(SpotlightFinding.created_timestamp).label("oldest"),
+            func.max(SpotlightFinding.hostname).label("hostname"),
+        )
+        .group_by(SpotlightFinding.aid)
     )
-    findings = query.all()
 
-    by_aid = {}
-    for finding in findings:
-        by_aid.setdefault(finding.aid, []).append(finding)
-
-    hosts = {
-        h.aid: h for h in
-        SpotlightHost.query.filter(SpotlightHost.aid.in_(by_aid.keys())).all()
-    } if by_aid else {}
-
-    rows = []
-    for aid, host_findings in by_aid.items():
-        host = hosts.get(aid)
-        severities = [(f_.cve_severity or "NONE").upper() for f_ in host_findings]
-        worst = max(severities, key=lambda s: SEVERITY_ORDER.get(s, 0)) if severities else "NONE"
-        ages = [f_.days_open for f_ in host_findings if f_.days_open is not None]
-        rows.append({
-            "aid": aid,
-            "host": host,
-            "hostname": (host.hostname if host else None) or host_findings[0].hostname or aid,
-            "count": len(host_findings),
-            "critical": len([s for s in severities if s == "CRITICAL"]),
-            "high": len([s for s in severities if s == "HIGH"]),
-            "kev": len([f_ for f_ in host_findings if f_.is_cisa_kev]),
-            "worst": worst.capitalize(),
-            "worst_rank": SEVERITY_ORDER.get(worst, 0),
-            "max_cvss": max((f_.cve_base_score or 0) for f_ in host_findings),
-            "oldest_days": max(ages) if ages else None,
-            "internet": (host.internet_exposure if host else None),
-            "criticality": (host.asset_criticality if host else None),
-            "product_type": (host.product_type_desc if host else None),
+    today = date.today()
+    grouped = []
+    for r in query.all():
+        grouped.append({
+            "aid": r.aid,
+            "count": r.count,
+            "critical": r.critical or 0,
+            "high": r.high or 0,
+            "kev": r.kev or 0,
+            "worst_rank": r.worst_rank or 0,
+            "worst": RANK_TITLE.get(r.worst_rank, "None"),
+            "max_cvss": r.max_cvss or 0,
+            "oldest_days": (today - r.oldest.date()).days if r.oldest else None,
+            "hostname": r.hostname,
         })
+    grouped.sort(key=lambda r: (r["kev"], r["worst_rank"], r["max_cvss"], r["count"]),
+                 reverse=True)
 
-    rows.sort(key=lambda r: (r["kev"], r["worst_rank"], r["max_cvss"], r["count"]),
-              reverse=True)
+    page = max(request.args.get("page", 1, type=int), 1)
+    pages = max(ceil(len(grouped) / ROWS_PER_PAGE), 1)
+    page = min(page, pages)
+    rows = grouped[(page - 1) * ROWS_PER_PAGE: page * ROWS_PER_PAGE]
+
+    # Host details for this page only.
+    hosts = {h.aid: h for h in SpotlightHost.query.filter(
+        SpotlightHost.aid.in_([r["aid"] for r in rows]))} if rows else {}
+    for r in rows:
+        host = hosts.get(r["aid"])
+        r["host"] = host
+        r["hostname"] = (host.hostname if host else None) or r["hostname"] or r["aid"]
+        r["internet"] = host.internet_exposure if host else None
+        r["criticality"] = host.asset_criticality if host else None
+        r["product_type"] = host.product_type_desc if host else None
+
+    args = dict(request.args.items())
+
+    def page_url(p):
+        return url_for("ingest.index", **{**args, "page": p})
 
     return render_template(
         "ingest/index.html",
         rows=rows,
+        total_hosts=len(grouped),
+        page=page,
+        pages=pages,
+        page_url=page_url,
         filters=f,
         totals=_totals(),
         last_run=_last_run(),
@@ -261,14 +295,19 @@ def cve_detail(cve_id):
 # -- CVE rollup ---------------------------------------------------------------
 AGE_OPTIONS = (0, 30, 60, 90, 180)
 DEFAULT_MIN_AGE = 60
-CVES_PER_PAGE = 100
 RANK_TITLE = {4: "Critical", 3: "High", 2: "Medium", 1: "Low"}
 CVE_SORTS = {
     # oldest exposure first, then known-exploited, then score
     "age": lambda r: (r["age"] if r["age"] is not None else -1, r["kev"], r["cvss"] or 0),
     "risk": lambda r: (r["kev"], r["exprt_rank"], r["cvss"] or 0, r["hosts"]),
     "hosts": lambda r: (r["hosts"], r["kev"], r["cvss"] or 0),
+    # A-Z by product, so every CVE for one product sits together. Within a
+    # product, the oldest first: that is usually the one worth keeping.
+    "product": lambda r: ((r["product"] or "\uffff").lower(),
+                          -(r["age"] if r["age"] is not None else -1)),
 }
+ASCENDING_SORTS = {"product"}
+MAX_CVE_DELETE = 500  # per action; past that, narrow the filter first
 
 
 def _rank(column):
@@ -348,12 +387,12 @@ def cves():
             "cisa_due": r.cisa_due,
             "product": (r.product or "").split(", ")[0] or None,
         })
-    shown.sort(key=CVE_SORTS[sort], reverse=True)
+    shown.sort(key=CVE_SORTS[sort], reverse=sort not in ASCENDING_SORTS)
 
     page = max(request.args.get("page", 1, type=int), 1)
-    pages = max(ceil(len(shown) / CVES_PER_PAGE), 1)
+    pages = max(ceil(len(shown) / ROWS_PER_PAGE), 1)
     page = min(page, pages)
-    rows = shown[(page - 1) * CVES_PER_PAGE: page * CVES_PER_PAGE]
+    rows = shown[(page - 1) * ROWS_PER_PAGE: page * ROWS_PER_PAGE]
 
     # Links carry the operator's filters. The CVE page gets the host filters
     # (type, internet-facing, and so on) but not the rollup's own age, sort,
@@ -386,6 +425,54 @@ def cves():
     )
 
 
+@ingest_bp.route("/cves/delete", methods=["POST"])
+@operator_required
+def cves_delete():
+    """Bulk delete whole CVEs as noise, within the filters on screen.
+
+    The typical case: one product carries a dozen CVEs, the same patch fixes
+    all of them, and one row in the queue says everything the other eleven
+    do. Keep that one, delete the rest.
+
+    Each finding is deleted exactly as the per-finding Delete does it: the
+    host+CVE is remembered, it stays out while Spotlight reports it open,
+    and it comes back if it closes and later reopens. Findings on a risk are
+    left alone. The scope is what the operator was looking at: if the view
+    was filtered to servers, only server findings for these CVEs go.
+    """
+    cve_ids = sorted({c.strip() for c in request.form.getlist("cve_ids") if c.strip()})
+    reason = (request.form.get("reason") or "").strip()
+    back = _safe_next(request.form.get("back"), url_for("ingest.cves"))
+    if not cve_ids:
+        flash("No CVEs selected.", "warning")
+        return redirect(back)
+    if len(cve_ids) > MAX_CVE_DELETE:
+        flash(f"Bulk delete is capped at {MAX_CVE_DELETE} CVEs at a time. "
+              f"Narrow the filter and run it again.", "warning")
+        return redirect(back)
+
+    f = _filters(request.form)
+    findings = (_apply_filters(_base_query(f["include_closed"], f["include_handled"]), f)
+                .filter(SpotlightFinding.cve_id.in_(cve_ids))
+                .all())
+    if not findings:
+        flash("Nothing matched those CVEs under the current filters; "
+              "nothing was deleted.", "info")
+        return redirect(back)
+
+    deleted, skipped = delete_findings(findings, current_user, reason or None)
+    gone = len({x.cve_id for x in deleted})  # read before commit detaches them
+    db.session.commit()
+
+    message = (f"{len(deleted)} finding(s) across {gone} CVE(s) deleted. "
+               f"They stay out of the queue unless they close and reopen.")
+    if skipped:
+        message += (f" {len(skipped)} left in place because they are attached to a "
+                    f"risk.")
+    flash(message, "success" if deleted else "warning")
+    return redirect(back)
+
+
 # -- elevation ----------------------------------------------------------------
 @ingest_bp.route("/elevate", methods=["GET", "POST"])
 @operator_required
@@ -402,7 +489,7 @@ def elevate():
         return redirect(url_for("ingest.index"))
     if len(ids) > MAX_SELECTION:
         flash(f"Selection is capped at {MAX_SELECTION} findings. Narrow the "
-              f"scope -- a risk that broad will not be actionable.", "warning")
+              f"scope; a risk that broad will not be actionable.", "warning")
         return redirect(url_for("ingest.index"))
 
     findings = elevate_mod.selected_findings(ids)
@@ -429,7 +516,7 @@ def elevate():
                   "moment. Nothing was changed; submit again.", "warning")
             return redirect(url_for("ingest.index"))
         if risk is None:
-            flash("Nothing to elevate — all selected findings are already on a risk.",
+            flash("Nothing to elevate. All selected findings are already on a risk.",
                   "info")
             return redirect(url_for("ingest.index"))
 
@@ -523,7 +610,8 @@ def delete():
         message += " They will stay out of the queue unless they close and reopen."
     if skipped:
         message += (f" {len(skipped)} left in place because they are attached to a "
-                    f"risk; remove them from the risk first.")
+                    f"risk. Remove the finding from the risk, or delete the risk, "
+                    f"to return it to the queue.")
     flash(message, "success" if deleted else "warning")
     return redirect(back)
 
@@ -531,8 +619,13 @@ def delete():
 @ingest_bp.route("/deleted")
 @login_required
 def deleted():
-    rows = SpotlightDeletion.query.order_by(SpotlightDeletion.deleted_at.desc()).all()
-    return render_template("ingest/deleted.html", deletions=rows)
+    """Newest first, paged: a bulk CVE delete can add thousands in one click."""
+    page = request.args.get("page", 1, type=int)
+    pagination = (SpotlightDeletion.query
+                  .order_by(SpotlightDeletion.deleted_at.desc(), SpotlightDeletion.id.desc())
+                  .paginate(page=page, per_page=ROWS_PER_PAGE, error_out=False))
+    return render_template("ingest/deleted.html", deletions=pagination.items,
+                           pagination=pagination)
 
 
 @ingest_bp.route("/deleted/<int:deletion_id>/restore", methods=["POST"])
@@ -554,7 +647,8 @@ def reopen(finding_id):
     finding = db.session.get(SpotlightFinding, finding_id) or abort(404)
     back = _safe_next(request.form.get("back"), url_for("ingest.index"))
     if finding.elevation_id:
-        flash("That finding is attached to a risk; unpick it there first.", "warning")
+        flash("That finding is attached to a risk. Remove it from the risk, or "
+              "delete the risk, to return it to the queue.", "warning")
         return redirect(back)
     finding.ingest_state = INGEST_NEW
     finding.dismissed_reason = None
@@ -569,20 +663,23 @@ def reopen(finding_id):
 @ingest_bp.route("/sync", methods=["POST"])
 @admin_required
 def sync():
+    """Start a manual sync on a background thread and return at once.
+
+    Missing or malformed credentials fail here, in the request, so the
+    operator sees why straight away instead of on a page refresh.
+    """
     from flask import current_app
     fql = (request.form.get("fql_filter") or "").strip() or None
-    run = run_sync(current_app, trigger="manual", user_id=current_user.id, fql_filter=fql)
-    if run.status == "success":
-        flash(
-            f"Sync complete: {run.records_fetched} record(s) fetched, "
-            f"{run.findings_created} new, {run.findings_updated} updated, "
-            f"{run.findings_closed} closed"
-            + (f", {run.parse_errors} skipped" if run.parse_errors else "")
-            + ".",
-            "success" if not run.parse_errors else "warning",
-        )
-    else:
+    try:
+        client_from_config(current_app.config)
+    except SpotlightError:
+        run = run_sync(current_app, trigger="manual", user_id=current_user.id, fql_filter=fql)
         flash(f"Sync failed: {run.error_message}", "danger")
+        return redirect(url_for("ingest.runs"))
+
+    _thread, message = start_background_sync(
+        current_app._get_current_object(), user_id=current_user.id, fql_filter=fql)
+    flash(message, "info" if _thread else "warning")
     return redirect(url_for("ingest.runs"))
 
 
@@ -609,6 +706,8 @@ def runs():
         region=current_app.config.get("FALCON_CLOUD_REGION"),
         schedule_enabled=current_app.config.get("SPOTLIGHT_SYNC_ENABLED"),
         schedule_hour=current_app.config.get("SPOTLIGHT_SYNC_HOUR"),
+        schedule_minute=current_app.config.get("SPOTLIGHT_SYNC_MINUTE", 0),
+        running=any(r.status == "running" for r in history),
         elevations=SpotlightElevation.query.order_by(
             SpotlightElevation.created_at.desc()).limit(25).all(),
     )
@@ -656,6 +755,7 @@ def _totals():
         ).count(),
         "hosts": db.session.query(func.count(func.distinct(SpotlightFinding.aid))).filter(
             SpotlightFinding.spotlight_status.in_(OPEN_STATUSES),
+            SpotlightFinding.is_suppressed.is_(False),
             SpotlightFinding.ingest_state.in_((INGEST_NEW, INGEST_TRIAGED)),
         ).scalar() or 0,
     }

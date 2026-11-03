@@ -143,8 +143,9 @@ class FalconSpotlightClient:
 
             pagination = (body.get("meta") or {}).get("pagination") or {}
             after = pagination.get("after")
-            # No token, or a short page, means we are done. Both checks --
-            # the API has returned an empty token on the last full page.
+            # Done when there is no next-page token or the page came back
+            # empty. A short page alone is not trusted as the end: the API
+            # can return one mid-stream with a token still to follow.
             if not after or not resources:
                 return
 

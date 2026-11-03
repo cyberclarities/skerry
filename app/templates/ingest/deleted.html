@@ -56,6 +56,21 @@
     </table>
   </div>
 </div>
+<p class="small text-muted mt-2">{{ pagination.total }} deleted finding(s), newest first.</p>
+{% if pagination.pages > 1 %}
+<nav>
+  <ul class="pagination pagination-sm">
+    {% for p in pagination.iter_pages() %}
+      {% if p %}
+        <li class="page-item {{ 'active' if p == pagination.page }}">
+          <a class="page-link" href="{{ url_for('ingest.deleted', page=p) }}">{{ p }}</a></li>
+      {% else %}
+        <li class="page-item disabled"><span class="page-link">…</span></li>
+      {% endif %}
+    {% endfor %}
+  </ul>
+</nav>
+{% endif %}
 {% else %}
 <div class="alert alert-light border small">Nothing has been deleted.</div>
 {% endif %}

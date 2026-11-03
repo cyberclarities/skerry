@@ -22,7 +22,7 @@
 
 {% if last_run %}
 <p class="small text-muted">
-  Last sync {{ last_run.started_at.strftime('%Y-%m-%d %H:%M') }} UTC —
+  Last sync {{ last_run.started_at.strftime('%Y-%m-%d %H:%M') }} UTC:
   <span class="{{ 'text-success' if last_run.status == 'success' else 'text-danger' }}">
     {{ last_run.status }}</span>,
   {{ last_run.records_fetched }} record(s) fetched

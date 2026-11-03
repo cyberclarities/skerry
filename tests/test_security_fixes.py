@@ -565,3 +565,27 @@ def test_heat_map_zones_follow_configured_thresholds():
     assert zones["4 x Impact 4"] == "AMBER"   # 16: red at the default 15, amber at 20
     assert zones["3 x Impact 3"] == "GREEN"   # 9: amber at the default 9, green at 10
     assert zones["4 x Impact 5"] == "RED"     # 20
+
+
+def test_real_authlib_builds_the_authorize_redirect():
+    """No IdP here, so metadata is pre-loaded. This exercises Authlib 1.9.1's
+    registration and redirect path for real; token exchange is not covered."""
+    app = _make_app(OIDC_CLIENT_ID="cid", OIDC_CLIENT_SECRET="sec",
+                    OIDC_DISCOVERY_URL="https://login.example.com/.well-known/openid-configuration")
+    from app import _setup_oidc
+    if "oauth" not in app.extensions:
+        _setup_oidc(app)
+    client = app.extensions["oauth"].oidc
+    client.server_metadata = {
+        "_loaded_at": 1, "issuer": "https://login.example.com",
+        "authorization_endpoint": "https://login.example.com/authorize",
+        "token_endpoint": "https://login.example.com/token",
+        "jwks_uri": "https://login.example.com/keys",
+    }
+    resp = app.test_client().get("/auth/oidc/login")
+
+    assert resp.status_code == 302
+    loc = resp.headers["Location"]
+    assert loc.startswith("https://login.example.com/authorize?")
+    for part in ("client_id=cid", "response_type=code", "scope=openid+email+profile", "state=", "nonce="):
+        assert part in loc, part

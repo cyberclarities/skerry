@@ -210,10 +210,6 @@ def tag_p(doc, tag_text, size=1):
     return p
 
 
-def page_break(doc):
-    doc.add_page_break()
-
-
 def spacer(doc, after=4):
     p = doc.add_paragraph()
     p.paragraph_format.space_after = Pt(after)

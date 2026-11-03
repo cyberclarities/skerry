@@ -176,7 +176,8 @@ Endpoint: `GET /spotlight/combined/vulnerabilities/v1`, facets `cve`,
 | Same finding on a later pull | Row updated in place. No duplicate. Affected products reflect the latest pull. |
 | An operator deleted it, Spotlight still reports it open | **Skipped.** It stays out of the queue. |
 | An operator deleted it, Spotlight stopped reporting it | Marked closed on the Deleted list. If it ever comes back, that is a reopen: it returns as **New**. |
-| Spotlight stops reporting it (patched, host retired, re-rated below High) | Marked **closed**, dated that night, and drops out of the queue. **Row kept.** The default filter fetches open findings only, so this is how a fix shows up. |
+| Spotlight stops reporting it (patched, host retired) | Marked **closed**, dated that night, and drops out of the queue. **Row kept.** The default filter fetches open findings only, so this is how a fix shows up. |
+| Re-rated below Critical/High while still open | **Left open.** The CVE is still on the host; only its score changed. An unelevated row is removed by the startup cleanup; an elevated one stays open on its risk. It is never reported as fixed. |
 | Spotlight reports it closed | Marked **closed**. **Row kept.** |
 | A closed finding is reported open again | Reopens in place. Its triage state is left alone. |
 | Operator already triaged or dismissed it | Triage state **left alone.** A sync never undoes a human decision. |
@@ -184,6 +185,9 @@ Endpoint: `GET /spotlight/combined/vulnerabilities/v1`, facets `cve`,
 | Token expires mid-run | Re-authenticates and continues |
 | Rate limited (429) | Waits the `X-RateLimit-RetryAfter` the API asks for |
 | Any failure | Run recorded as **failed** with the error. It does not leave yesterday's numbers looking current. |
+| **Run sync now** pressed | The sync starts on a background thread and the page returns at once. The Sync page refreshes every 15 seconds until it finishes. Missing credentials fail straight away, in the request. |
+| A sync is already running | A second manual sync is refused, and the nightly run skips rather than running alongside. |
+| The app restarts mid-sync | The run is marked **failed**, "Interrupted," on the next start. Everything committed before the restart is kept; run the sync again to finish. |
 
 Closed findings are kept, not deleted. A closed finding that was once
 elevated is evidence, and deleting evidence to tidy a queue is how you lose
@@ -265,6 +269,20 @@ KEV status with the CISA deadline, and the longest-open host. The
 vulnerability detail carries the CVSS vector, exploit status, the affected
 software, and each host with its type and days open. All of it is editable
 before you create the risk.
+
+**Bulk delete by CVE.** One product often carries a dozen CVEs that the same
+patch fixes, and the queue shows all of them. Click the **Product** header to
+group CVEs by product (oldest first within each), keep the one you will track,
+check the rest, and press **Delete selected CVEs**. Give a reason; it is kept
+on the Deleted findings list.
+
+Each finding goes exactly as the per-finding Delete does it: the host+CVE is
+remembered, stays out while Spotlight reports it open, and comes back if it
+closes and later reopens. Findings attached to a risk are left alone. The
+delete covers only what the filters show, so filtering to one host type
+deletes those CVEs on those hosts and nowhere else. A host that turns up with
+a deleted CVE in a later sync arrives as New, because that host was never
+deleted. Up to 500 CVEs per action.
 
 ### 5.2 Upgrading an existing queue
 

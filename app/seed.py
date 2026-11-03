@@ -150,7 +150,7 @@ LOOKUP_DEFAULTS = {
         "Threat Intelligence Feed", "Internal Audit",
         "Incident Report", "News / Public Disclosure",
     ],
-    "risk_owner": [],  # populated by admins for their organisation
+    "risk_owner": [],  # populated by admins for their organization
 }
 
 

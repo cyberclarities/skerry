@@ -32,8 +32,8 @@ RUN addgroup -S -g 10001 skerry \
 EXPOSE 5000
 
 ENTRYPOINT ["sh", "/app/docker-entrypoint.sh"]
-# GUNICORN_TIMEOUT is long on purpose. A manual Spotlight sync runs inside the
-# request, and a large tenant takes far longer than gunicorn's default to pull.
-# At 120s the worker was killed mid-sync. This is a stopgap until the sync moves
-# to a background job.
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-5000} --workers 1 --timeout ${GUNICORN_TIMEOUT:-1800} 'run:app'"]
+# GUNICORN_TIMEOUT is how long one request may run before gunicorn kills the
+# worker. The Spotlight sync runs on a background thread, not in a request, so
+# it is not bound by this. 300s covers a large Excel export or database import.
+# One worker on purpose: the sync lock and the scheduler live in that process.
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-5000} --workers 1 --timeout ${GUNICORN_TIMEOUT:-300} 'run:app'"]

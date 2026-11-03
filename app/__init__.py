@@ -125,6 +125,11 @@ def create_app(config_class=Config):
         from .spotlight.maintenance import dedupe_and_prune
         dedupe_and_prune(app.config.get("SPOTLIGHT_SEVERITIES") or ("CRITICAL", "HIGH"))
 
+        # A sync runs on a background thread, which dies with the process.
+        # Close out any run a restart left marked "running".
+        from .spotlight.ingest import mark_interrupted_runs
+        mark_interrupted_runs()
+
     # Background scheduler for email notifications and the Spotlight pull
     if app.config.get("SMTP_HOST") or app.config.get("SPOTLIGHT_SYNC_ENABLED"):
         _start_scheduler(app)

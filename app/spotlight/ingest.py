@@ -38,6 +38,7 @@ The contract here is narrow and worth stating plainly:
 
 import json
 import logging
+import threading
 from datetime import datetime, timezone
 
 from ..models import db
@@ -322,43 +323,62 @@ def run_sync(app, trigger="scheduled", user_id=None, fql_filter=None, max_pages=
             run.pages_fetched = page
             for record in resources:
                 run.records_fetched += 1
+                # Write the counter before the savepoint below. On SQLite's
+                # stock driver that opens a real transaction for the
+                # savepoint to nest in; without it, each savepoint becomes
+                # its own disk commit, roughly ten times slower. It also
+                # keeps the counter out of a savepoint that may roll back.
+                db.session.flush()
+
+                # Open is recorded before the severity check. A CVE rescored
+                # below the line is still open on the host; if it were
+                # skipped first, closure by absence would mark it closed,
+                # and an elevated copy Remediated.
+                key = record_key(record)
+                is_open = record.get("status") in OPEN
+                if is_open:
+                    open_keys.add(key)
+                if record_severity(record) not in severities:
+                    below_severity += 1
+                    continue
+
+                reopened = False
                 try:
-                    if record_severity(record) not in severities:
-                        below_severity += 1
-                        continue
-                    key = record_key(record)
-                    is_open = record.get("status") in OPEN
-                    if is_open:
-                        open_keys.add(key)
-                    deletion = deletions.get(key)
-                    if deletion is not None:
-                        if not is_open:
-                            deletion.closed_seen_at = deletion.closed_seen_at or _utcnow()
-                            continue
-                        if deletion.closed_seen_at is None:
-                            still_deleted += 1      # deleted, still open: stays gone
-                            continue
-                        # It closed after the deletion and is back: a reopen.
-                        log.info("Spotlight %s on %s reopened after deletion; "
-                                 "returning it to the queue.", key[1], key[0])
-                        db.session.delete(deletion)
+                    # One record, one savepoint. A record that fails rolls
+                    # back alone, including any half-written row, and the
+                    # rest of the batch keeps going.
+                    with db.session.begin_nested():
+                        deletion = deletions.get(key)
+                        if deletion is not None:
+                            if not is_open:
+                                deletion.closed_seen_at = deletion.closed_seen_at or _utcnow()
+                                continue
+                            if deletion.closed_seen_at is None:
+                                still_deleted += 1      # deleted, still open: stays gone
+                                continue
+                            # It closed after the deletion and is back: a reopen.
+                            log.info("Spotlight %s on %s reopened after deletion; "
+                                     "returning it to the queue.", key[1], key[0])
+                            db.session.delete(deletion)
+                            reopened = True
+
+                        host, host_created = upsert_host(record)
+                        if host_created:
+                            run.hosts_created += 1
+                        if host is not None and host.id is None:
+                            db.session.flush()  # need host.id for the finding FK
+
+                        _finding, action = upsert_finding(record, host, run_seen)
+                        if action == "created":
+                            run.findings_created += 1
+                        elif action == "closed":
+                            run.findings_closed += 1
+                        elif action == "updated":
+                            run.findings_updated += 1
+                        # "merged": a second record for a row this run already
+                        # counted; counting it again would overstate the work.
+                    if reopened:
                         deletions.pop(key)
-
-                    host, host_created = upsert_host(record)
-                    if host_created:
-                        run.hosts_created += 1
-                    if host is not None and host.id is None:
-                        db.session.flush()  # need host.id for the finding FK
-
-                    _finding, action = upsert_finding(record, host, run_seen)
-                    if action == "created":
-                        run.findings_created += 1
-                    elif action == "closed":
-                        run.findings_closed += 1
-                    elif action == "updated":
-                        run.findings_updated += 1
-                    # "merged": a second record for a row this run already
-                    # counted; counting it again would overstate the work.
                 except Exception as exc:  # noqa: BLE001 -- one bad row, not the run
                     run.parse_errors += 1
                     log.warning("Skipped Spotlight record %s: %s",
@@ -387,12 +407,18 @@ def run_sync(app, trigger="scheduled", user_id=None, fql_filter=None, max_pages=
             for key, deletion in deletions.items():
                 if key not in open_keys and deletion.closed_seen_at is None:
                     deletion.closed_seen_at = now
-            for finding in SpotlightFinding.query.filter(
-                    SpotlightFinding.spotlight_status.in_(OPEN)):
-                if (finding.aid, finding.cve_id) not in open_keys:
-                    finding.spotlight_status = "closed"
-                    finding.closed_timestamp = now
-                    run.findings_closed += 1
+            # Three columns per row, not whole objects: on a large tenant
+            # this walks every open finding, at the very end of the run.
+            gone = [fid for fid, aid, cve in db.session.query(
+                        SpotlightFinding.id, SpotlightFinding.aid, SpotlightFinding.cve_id)
+                    .filter(SpotlightFinding.spotlight_status.in_(OPEN))
+                    if (aid, cve) not in open_keys]
+            for start in range(0, len(gone), 500):
+                SpotlightFinding.query.filter(
+                    SpotlightFinding.id.in_(gone[start:start + 500])
+                ).update({"spotlight_status": "closed", "closed_timestamp": now},
+                         synchronize_session=False)
+            run.findings_closed += len(gone)
         else:
             log.info("Spotlight sync: closure by absence skipped (%s).",
                      "manual filter" if fql_filter is not None else
@@ -440,7 +466,75 @@ def run_sync(app, trigger="scheduled", user_id=None, fql_filter=None, max_pages=
     return run
 
 
+# One sync at a time per process. The scheduled job and the manual button
+# share this lock, so a click during the nightly run is refused rather than
+# running two syncs into the same tables at once. Gunicorn runs one worker;
+# with more, the "running" check in start_background_sync covers the rest.
+_sync_lock = threading.Lock()
+
+INTERRUPTED = "Interrupted: the app stopped or restarted before this sync finished."
+
+
 def run_sync_job(app):
     """APScheduler entry point -- needs its own app context."""
-    with app.app_context():
-        run_sync(app, trigger="scheduled")
+    if not _sync_lock.acquire(blocking=False):
+        log.warning("Scheduled Spotlight sync skipped: another sync is running.")
+        return
+    try:
+        with app.app_context():
+            run_sync(app, trigger="scheduled")
+    finally:
+        _sync_lock.release()
+
+
+def start_background_sync(app, user_id=None, fql_filter=None):
+    """Start a manual sync on its own thread. Returns (thread, message).
+
+    The web request returns at once and the Runs page shows progress. A
+    large tenant takes far longer than any sane request timeout; running
+    the sync inside the request is what got the worker killed mid-pull.
+
+    thread is None when nothing was started: another sync holds the lock,
+    or the database shows one still running.
+    """
+    if not _sync_lock.acquire(blocking=False):
+        return None, "A sync is already running. Wait for it to finish."
+    try:
+        if SpotlightSyncRun.query.filter_by(status="running").first() is not None:
+            _sync_lock.release()
+            return None, ("A sync is already running. Wait for it to finish, or "
+                          "restart the app if it has stopped responding.")
+    except Exception:
+        _sync_lock.release()
+        raise
+
+    def work():
+        try:
+            with app.app_context():
+                run_sync(app, trigger="manual", user_id=user_id, fql_filter=fql_filter)
+        except Exception:  # noqa: BLE001 -- run_sync records its own failures
+            log.exception("Background Spotlight sync crashed")
+        finally:
+            _sync_lock.release()
+
+    thread = threading.Thread(target=work, name="spotlight-sync", daemon=True)
+    thread.start()
+    return thread, "Sync started. This page refreshes until it finishes."
+
+
+def mark_interrupted_runs():
+    """At startup, close out any run left 'running' by a stopped process.
+
+    A sync thread dies with its process. Without this, its run row would
+    say "running" forever and block every later manual sync.
+    Returns the number of runs closed.
+    """
+    stale = SpotlightSyncRun.query.filter_by(status="running").all()
+    for run in stale:
+        run.status = "failed"
+        run.error_message = INTERRUPTED
+        run.finished_at = _utcnow()
+    if stale:
+        db.session.commit()
+        log.warning("Marked %s interrupted Spotlight sync run(s) as failed.", len(stale))
+    return len(stale)

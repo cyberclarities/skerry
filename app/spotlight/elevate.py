@@ -28,7 +28,9 @@ from ..models import Risk, VulnerabilityFinding, db
 from ..models_spotlight import (
     INGEST_DISMISSED,
     INGEST_ELEVATED,
+    INGEST_NEW,
     INGEST_TRIAGED,
+    EXPLOIT_STATUS_LABELS,
     SpotlightElevation,
     SpotlightFinding,
     SpotlightHost,
@@ -44,13 +46,20 @@ DEFAULT_CSF = ("ID", "ID.RA", "ID.RA-01")
 
 MAX_CVES_IN_SUMMARY = 25
 
+# The last sentence of every generated threat description.
+CLOSING_LINE = (
+    "Unpatched software on a reachable host is the entry point an attacker "
+    "uses first, because it needs no one to make a mistake. The flaw is "
+    "already there."
+)
+
 
 def _utcnow():
     return datetime.now(timezone.utc)
 
 
 def selected_findings(finding_ids):
-    """Load staged findings by primary key, preserving nothing but order by CVE."""
+    """Load staged findings by primary key, ordered by hostname, then CVE."""
     if not finding_ids:
         return []
     return (
@@ -176,22 +185,11 @@ def _threat_description(findings, host_names, cves):
     if oldest is not None:
         parts.append(f"The oldest finding in this group has been open {oldest} days.")
 
-    parts.append(
-        "Unpatched software on a reachable host is the entry point an attacker "
-        "uses first, because it needs no one to make a mistake -- the flaw is "
-        "already there."
-    )
+    parts.append(CLOSING_LINE)
     return " ".join(parts)
 
 
 # -- one CVE: build the risk out of the CVE's own data -------------------------
-CLOSING_LINE = (
-    "Unpatched software on a reachable host is the entry point an attacker "
-    "uses first, because it needs no one to make a mistake. The flaw is "
-    "already there."
-)
-
-
 def _long_date(value):
     if not value:
         return None
@@ -286,8 +284,7 @@ def _cve_threat_description(findings, host_names, hosts):
     else:
         status = max((f.exploit_status or 0 for f in findings), default=0)
         if status >= 30:
-            label = {30: "Available", 60: "Easily accessible", 90: "Actively used"}.get(
-                status, lead.exploit_status_label)
+            label = EXPLOIT_STATUS_LABELS.get(status, lead.exploit_status_label)
             parts.append(f"CrowdStrike's exploit status for this CVE is '{label}'.")
 
     oldest = max((f.days_open for f in findings if f.days_open is not None), default=None)
@@ -317,9 +314,7 @@ def _cve_vulnerability_detail(findings, hosts, host_limit=MAX_CVES_IN_SUMMARY):
     status = max((f.exploit_status for f in findings if f.exploit_status is not None),
                  default=None)
     if status is not None:
-        lines.append("Exploit status: " + {0: "Unproven", 30: "Available",
-                                            60: "Easily accessible",
-                                            90: "Actively used"}.get(status, "Unknown"))
+        lines.append("Exploit status: " + EXPLOIT_STATUS_LABELS.get(status, "Unknown"))
     if any(f.is_cisa_kev for f in findings):
         due = min((f.cisa_due_date for f in findings if f.cisa_due_date), default=None)
         lines.append("CISA KEV: Yes" + (f", federal due date {due.isoformat()}" if due else ""))
@@ -580,6 +575,32 @@ def _apply_form(risk, form, proposal):
     risk.nist_csf_category = text("nist_csf_category", proposal["nist_csf_category"])
     risk.nist_csf_subcategory = text("nist_csf_subcategory", proposal["nist_csf_subcategory"])
     risk.updated_at = _utcnow()
+
+
+# -- undoing an elevation -----------------------------------------------------
+def release_findings(query, risk_ref=None):
+    """Return staged findings to the queue when their risk link goes away.
+
+    Called when a risk is deleted, or when one vulnerability row is removed
+    from a risk. Without it, the staged rows stay Elevated with no risk
+    behind them: out of the queue, and refused by reopen, delete, and
+    elevate alike. That is a CVE nobody is tracking, presented as handled.
+
+    `query` is a SpotlightFinding query. The rows go back to New, with a
+    note saying where they came from. SpotlightElevation is left as it is;
+    it is the record that the elevation happened.
+
+    Returns the number of rows released.
+    """
+    note = (f"Returned to the queue on {date.today().isoformat()}: "
+            f"its link to risk {risk_ref or '(unknown)'} was removed.")
+    return query.update({
+        "ingest_state": INGEST_NEW,
+        "elevation_id": None,
+        "risk_id": None,
+        "vuln_finding_id": None,
+        "triage_note": note,
+    }, synchronize_session=False)
 
 
 # -- triage without elevation -------------------------------------------------

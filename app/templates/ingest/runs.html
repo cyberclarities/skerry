@@ -5,6 +5,10 @@
 {% endblock %}
 
 {% block content %}
+{% if running %}
+  {# Refresh while a sync runs, so its counts and final status appear on their own. #}
+  <meta http-equiv="refresh" content="15">
+{% endif %}
 <h4 class="mb-3">Spotlight sync</h4>
 
 {% if not configured %}
@@ -23,7 +27,7 @@
       <div class="col-md-3">
         <span class="text-muted">Scheduled sync:</span>
         {% if schedule_enabled %}
-          daily at {{ '%02d'|format(schedule_hour) }}:00 server time
+          daily at {{ '%02d'|format(schedule_hour) }}:{{ '%02d'|format(schedule_minute) }} server time
         {% else %}
           <span class="text-danger">disabled</span>
         {% endif %}
@@ -48,8 +52,9 @@
     </form>
     <div id="test-result" class="small mt-2"></div>
     <p class="small text-muted mt-2 mb-0">
-      A manual sync runs in the request. On a large tenant this takes minutes —
-      leave the tab open. The scheduled run is the normal path.
+      A manual sync runs in the background. On a large tenant it takes minutes;
+      this page refreshes on its own while one is running, and you can leave it.
+      The scheduled run is the normal path.
     </p>
   </div>
 </div>

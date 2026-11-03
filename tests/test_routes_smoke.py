@@ -215,7 +215,7 @@ def test_elevate_button_opens_the_form_instead_of_creating_a_risk(client):
 
 
 def test_cve_view_groups_and_puts_the_oldest_first(client):
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
     c, application = client
     from app.models import db
     from app.models_spotlight import SpotlightFinding
@@ -227,7 +227,7 @@ def test_cve_view_groups_and_puts_the_oldest_first(client):
                        if f.cve_id and f.is_open and not f.is_suppressed})
         assert len(cves) >= 2
         old_cve, young_cve = cves[0], cves[-1]
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)  # stored naive UTC
         for f in SpotlightFinding.query.filter_by(cve_id=old_cve):
             f.created_timestamp = now - timedelta(days=200)
         for f in SpotlightFinding.query.filter_by(cve_id=young_cve):
@@ -287,3 +287,125 @@ def test_single_cve_risk_is_built_from_the_cve_data(client):
         assert "Affected software:" in risk.vulnerability_detail
         assert "Source: CrowdStrike Falcon Spotlight" in risk.vulnerability_detail
         assert "—" not in risk.threat_description
+
+
+# ---------------------------------------------------------------------------
+# Bulk delete by CVE: keep one CVE per product, delete the rest.
+# ---------------------------------------------------------------------------
+def _queue_cves(application):
+    from app.models_spotlight import SpotlightFinding
+    with application.app_context():
+        return sorted({f.cve_id for f in SpotlightFinding.query
+                       if f.cve_id and f.is_open and not f.is_suppressed})
+
+
+def test_bulk_delete_cves_removes_them_and_remembers_each_host(client):
+    c, application = client
+    from app.models_spotlight import SpotlightDeletion, SpotlightFinding
+    _load_sample(application)
+    cves = _queue_cves(application)
+    assert len(cves) >= 2
+    doomed, kept = cves[:1], cves[1:]
+    with application.app_context():
+        pairs = {(f.aid, f.cve_id) for f in
+                 SpotlightFinding.query.filter(SpotlightFinding.cve_id.in_(doomed))}
+
+    page = c.get("/ingest/cves?min_age=0").data.decode()
+    assert 'name="cve_ids"' in page and "Delete selected CVEs" in page
+
+    resp = c.post("/ingest/cves/delete",
+                  data={"cve_ids": doomed, "reason": "same patch as the one we kept",
+                        "back": "/ingest/cves?min_age=0"},
+                  follow_redirects=True)
+    assert resp.status_code == 200
+    assert b"deleted" in resp.data
+
+    with application.app_context():
+        assert SpotlightFinding.query.filter(
+            SpotlightFinding.cve_id.in_(doomed)).count() == 0
+        for cve in kept:
+            assert SpotlightFinding.query.filter_by(cve_id=cve).count() > 0
+        marks = {(d.aid, d.cve_id) for d in SpotlightDeletion.query}
+        assert {p for p in pairs if p[0]} <= marks
+        assert all(d.reason == "same patch as the one we kept"
+                   for d in SpotlightDeletion.query)
+
+
+def test_bulk_delete_only_touches_what_the_filters_show(client):
+    """Filtered to workstations, deleting a CVE leaves it on the servers."""
+    c, application = client
+    from app.models_spotlight import SpotlightFinding
+    _load_sample(application)
+    c.post("/ingest/cves/delete",
+           data={"cve_ids": ["CVE-2024-21412"], "ptype": "Workstation"})
+    with application.app_context():
+        left = SpotlightFinding.query.filter_by(cve_id="CVE-2024-21412").all()
+        assert [f.hostname for f in left] == ["SKY-DC01"]
+
+
+def test_bulk_delete_leaves_findings_on_a_risk(client):
+    c, application = client
+    from app.models_spotlight import SpotlightFinding
+    _load_sample(application)
+    with application.app_context():
+        ids = [f.id for f in SpotlightFinding.query.filter_by(cve_id="CVE-2024-21412")]
+    c.post("/ingest/elevate", data={"finding_ids": ids, "confirm_elevate": "1",
+                                    "likelihood": "3", "impact": "3"})
+    # include_handled, so the elevated rows are in scope and must be refused
+    c.post("/ingest/cves/delete",
+           data={"cve_ids": ["CVE-2024-21412"], "include_handled": "1"})
+    with application.app_context():
+        assert SpotlightFinding.query.filter_by(cve_id="CVE-2024-21412").count() == 2
+
+
+def test_bulk_delete_needs_a_selection_and_sort_by_product_renders(client):
+    c, application = client
+    from app.models_spotlight import SpotlightFinding
+    _load_sample(application)
+    with application.app_context():
+        before = SpotlightFinding.query.count()
+    resp = c.post("/ingest/cves/delete", data={}, follow_redirects=True)
+    assert b"No CVEs selected" in resp.data
+    with application.app_context():
+        assert SpotlightFinding.query.count() == before
+    assert c.get("/ingest/cves?min_age=0&sort=product").status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Review 2026-11-03, section 2: memory and paging.
+# ---------------------------------------------------------------------------
+def test_host_rollup_counts_match_the_findings(client):
+    """The rollup now counts in SQL; check it against the rows themselves."""
+    c, application = client
+    from sqlalchemy import inspect
+    from app.models_spotlight import SpotlightFinding
+    _load_sample(application)
+    body = c.get("/ingest/").data.decode()
+    with application.app_context():
+        queue = [f for f in SpotlightFinding.query
+                 if f.aid and f.is_open and not f.is_suppressed
+                 and f.ingest_state in ("New", "Triaged")]
+        aids = {f.aid for f in queue}
+        # the list query left the payload unloaded; asking for it still works
+        assert all("raw_payload" not in inspect(f).dict for f in queue)
+        assert queue[0].raw_payload
+    assert f"{len(aids)} host(s), ordered by KEV" in body
+    dc = [f for f in queue if f.hostname == "SKY-DC01"]
+    row = body[body.index("SKY-DC01"):]
+    assert f'<td class="text-center">{len(dc)}</td>' in row[:2000]
+
+
+def test_deleted_list_is_paged(client):
+    c, application = client
+    from app.models import db
+    from app.models_spotlight import SpotlightDeletion
+    with application.app_context():
+        for n in range(130):
+            db.session.add(SpotlightDeletion(aid=f"aid{n:04d}", cve_id="CVE-2099-0001",
+                                             hostname=f"host-{n:04d}"))
+        db.session.commit()
+    first = c.get("/ingest/deleted").data.decode()
+    second = c.get("/ingest/deleted?page=2").data.decode()
+    assert "130 deleted finding(s)" in first
+    assert first.count("<code>CVE-2099-0001</code>") == 100
+    assert second.count("<code>CVE-2099-0001</code>") == 30

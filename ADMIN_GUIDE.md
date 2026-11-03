@@ -250,7 +250,12 @@ OIDC_DISCOVERY_URL=
 OIDC_ADMIN_GROUP=
 OIDC_OPERATOR_GROUP=
 OIDC_VIEWER_GROUP=
+
+# Web server
+GUNICORN_TIMEOUT=300
 ```
+
+`GUNICORN_TIMEOUT` is how many seconds one web request may run before Gunicorn stops the worker and starts a fresh one. The default of 300 covers a large Excel export or a database import. The Spotlight sync is not bound by it, because it runs on a background thread. Raise it only if a page or export is being cut off; a change takes effect when the container is recreated with `docker compose up -d`. CrowdStrike Spotlight settings are covered in `SPOTLIGHT_INGEST.md`.
 
 > The bootstrap admin account is created once — on first start — using `ADMIN_USERNAME`, `ADMIN_EMAIL`, `ADMIN_NAME`, and `ADMIN_PASSWORD`. After that, changes to these variables have no effect. Manage the account through the application's User Management page.
 

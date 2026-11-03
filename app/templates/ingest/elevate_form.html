@@ -10,7 +10,7 @@
     <h4 class="mb-1">Elevate to risk <span class="text-muted">{{ next_id }}</span></h4>
     <p class="text-muted small mb-0">
       {{ findings|length }} finding(s) · {{ proposal.host_names|length }} host(s) ·
-      {{ proposal.cves|length }} CVE(s) — {{ proposal.scope_label }}
+      {{ proposal.cves|length }} CVE(s) · {{ proposal.scope_label }}
     </p>
   </div>
 </div>
@@ -104,7 +104,7 @@
   </div>
 
   <div class="card shadow-sm mb-3">
-    <div class="card-header bg-white py-2"><strong class="small">Scoring — your numbers, not the scanner's</strong></div>
+    <div class="card-header bg-white py-2"><strong class="small">Scoring: your numbers, not the scanner's</strong></div>
     <div class="card-body">
       <div class="row g-3">
         <div class="col-md-4">
@@ -156,7 +156,7 @@
         <div class="col-12">
           <label class="form-label small">Existing controls</label>
           <textarea name="existing_controls" rows="2" class="form-control form-control-sm"
-                    placeholder="EDR, network segmentation, WAF, patch cadence — and whether each has been tested."></textarea>
+                    placeholder="EDR, network segmentation, WAF, patch cadence, and whether each has been tested."></textarea>
         </div>
         <div class="col-md-3">
           <label class="form-label small">Control type</label>
@@ -247,7 +247,7 @@
           </select>
           <input type="hidden" name="nist_csf_function" id="csf-fn" value="{{ proposal.nist_csf_function }}">
           <input type="hidden" name="nist_csf_category" id="csf-cat" value="{{ proposal.nist_csf_category }}">
-          <div class="form-text small">Defaults to ID.RA-01 — vulnerabilities in assets are identified and recorded.</div>
+          <div class="form-text small">Defaults to ID.RA-01: vulnerabilities in assets are identified and recorded.</div>
         </div>
         <div class="col-md-6">
           <label class="form-label small">Evidence links</label>

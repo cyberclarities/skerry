@@ -370,8 +370,11 @@ def test_elevation_rejects_unknown_status(app, monkeypatch):
 
 def test_generated_text_uses_us_spelling():
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    for rel in ("app/spotlight/elevate.py", "app/templates/ingest/cve_detail.html"):
-        assert "theorised" not in open(os.path.join(root, rel)).read(), rel
+    for rel in ("app/spotlight/elevate.py", "app/templates/ingest/cve_detail.html",
+                "app/routes/auth_routes.py"):
+        text = open(os.path.join(root, rel)).read()
+        for uk in ("theorised", "authorised", "organisation"):
+            assert uk not in text, (rel, uk)
 
 
 def test_database_import_cleans_the_queue(app, monkeypatch, tmp_path):
@@ -393,3 +396,202 @@ def test_database_import_cleans_the_queue(app, monkeypatch, tmp_path):
                   data={"db_file": (io.BytesIO(src.read_bytes()), "export.db")})
     assert b"imported successfully" in resp.data
     assert calls, "dedupe_and_prune must run after an import"
+
+
+# ── Review 2026-11-03, 1.2: a rescored CVE is still open ─────────────────────
+def test_cve_rescored_below_the_line_is_not_marked_closed(app, monkeypatch):
+    """Falcon still reports it open; only its severity changed. Closure by
+    absence must not read that as patched."""
+    other = "CVE-2099-0002"
+    sync(app, monkeypatch, [rec(1), rec(2, cve=other)])
+    sync(app, monkeypatch, [rec(1, severity="MEDIUM"), rec(2, cve=other)])
+    assert [r[3] for r in rows(app)] == ["open"]
+
+
+def test_rescored_cve_on_a_risk_is_not_reported_remediated(app, monkeypatch):
+    from app.models import VulnerabilityFinding
+    from app.models_spotlight import SpotlightFinding
+    other = "CVE-2099-0002"
+    sync(app, monkeypatch, [rec(1), rec(2, cve=other)])
+    with app.app_context():
+        fid = SpotlightFinding.query.filter_by(cve_id=CVE).one().id
+    c = app.test_client()
+    _login(c)
+    c.post("/ingest/elevate", data={"finding_ids": [fid], "confirm_elevate": "1",
+                                    "likelihood": "3", "impact": "3"})
+    sync(app, monkeypatch, [rec(1, severity="MEDIUM"), rec(2, cve=other)])
+    with app.app_context():
+        assert SpotlightFinding.query.filter_by(cve_id=CVE).one().spotlight_status == "open"
+        assert VulnerabilityFinding.query.filter_by(cve_id=CVE).one().status == "Open"
+
+
+# ── Review 2026-11-03, 1.1: findings are released when their risk link goes ──
+def _elevated(app, monkeypatch):
+    from app.models import Risk
+    from app.models_spotlight import SpotlightFinding
+    other_aid = "fff000111222"
+    sync(app, monkeypatch, [rec(1), rec(2, aid=other_aid)])
+    with app.app_context():
+        ids = [f.id for f in SpotlightFinding.query.filter_by(cve_id=CVE)]
+    c = app.test_client()
+    _login(c)
+    c.post("/ingest/elevate", data={"finding_ids": ids, "confirm_elevate": "1",
+                                    "likelihood": "3", "impact": "3"})
+    with app.app_context():
+        risk = Risk.query.one()
+        return c, ids, risk.id, risk.risk_id
+
+
+def test_deleting_a_risk_returns_its_findings_to_the_queue(app, monkeypatch):
+    from app.models_spotlight import SpotlightElevation, SpotlightFinding
+    c, ids, pk, ref = _elevated(app, monkeypatch)
+    c.post(f"/risks/{pk}/delete")
+    with app.app_context():
+        for f in SpotlightFinding.query.filter(SpotlightFinding.id.in_(ids)):
+            assert f.ingest_state == "New"
+            assert f.elevation_id is None and f.risk_id is None and f.vuln_finding_id is None
+            assert ref in f.triage_note
+        # the record that the elevation happened survives
+        assert SpotlightElevation.query.one().risk_ref == ref
+    assert CVE in c.get("/ingest/cves?min_age=0").data.decode()
+    # and the ordinary paths work again
+    resp = c.post("/ingest/delete", data={"finding_ids": ids[:1]}, follow_redirects=True)
+    assert b"left in place" not in resp.data
+
+
+def test_removing_a_finding_from_a_risk_returns_only_that_one(app, monkeypatch):
+    from app.models import VulnerabilityFinding
+    from app.models_spotlight import SpotlightFinding
+    c, ids, pk, _ref = _elevated(app, monkeypatch)
+    with app.app_context():
+        vuln = VulnerabilityFinding.query.filter_by(risk_id=pk).first()
+        released_id = SpotlightFinding.query.filter_by(vuln_finding_id=vuln.id).one().id
+    resp = c.post(f"/risks/{pk}/vulnerability/{vuln.id}/delete", follow_redirects=True)
+    assert b"back in the ingest queue" in resp.data
+    with app.app_context():
+        states = {f.id: (f.ingest_state, f.vuln_finding_id)
+                  for f in SpotlightFinding.query.filter(SpotlightFinding.id.in_(ids))}
+        assert states[released_id] == ("New", None)
+        kept = [s for i, s in states.items() if i != released_id]
+        assert kept and all(s[0] == "Elevated" and s[1] is not None for s in kept)
+
+
+# ── Review 2026-11-03, 2.4: the manual sync runs in the background ───────────
+def _fake_falcon(monkeypatch, records):
+    import app.routes.ingest_routes as routes
+    import app.spotlight.ingest as ingest
+    fake = lambda _cfg: FakeClient(records)  # noqa: E731
+    monkeypatch.setattr(ingest, "client_from_config", fake)
+    monkeypatch.setattr(routes, "client_from_config", fake)
+
+
+def _join_sync_threads():
+    import threading
+    for t in threading.enumerate():
+        if t.name == "spotlight-sync":
+            t.join(timeout=30)
+            assert not t.is_alive(), "background sync did not finish"
+
+
+def test_manual_sync_returns_at_once_and_finishes_in_the_background(app, monkeypatch):
+    from app.models_spotlight import SpotlightFinding, SpotlightSyncRun
+    _fake_falcon(monkeypatch, [rec(1), rec(2, cve="CVE-2099-0002")])
+    c = app.test_client()
+    _login(c)
+    resp = c.post("/ingest/sync", follow_redirects=True)
+    assert b"Sync started" in resp.data
+    _join_sync_threads()
+    with app.app_context():
+        run = SpotlightSyncRun.query.order_by(SpotlightSyncRun.id.desc()).first()
+        assert run.status == "success" and run.trigger == "manual"
+        assert SpotlightFinding.query.count() == 2
+    # the lock was released: a second sync can start
+    assert b"Sync started" in c.post("/ingest/sync", follow_redirects=True).data
+    _join_sync_threads()
+
+
+def test_second_sync_is_refused_while_one_runs(app, monkeypatch):
+    import app.spotlight.ingest as ingest
+    from app.models_spotlight import SpotlightSyncRun
+    _fake_falcon(monkeypatch, [rec(1)])
+    c = app.test_client()
+    _login(c)
+    assert ingest._sync_lock.acquire(blocking=False)   # stand in for a running sync
+    try:
+        resp = c.post("/ingest/sync", follow_redirects=True)
+        assert b"already running" in resp.data
+        with app.app_context():
+            assert SpotlightSyncRun.query.count() == 0
+        # the nightly job skips too, rather than running alongside
+        ingest.run_sync_job(app)
+        with app.app_context():
+            assert SpotlightSyncRun.query.count() == 0
+    finally:
+        ingest._sync_lock.release()
+
+
+def test_a_run_left_running_by_a_restart_is_closed_out(app):
+    from app.models import db
+    from app.models_spotlight import SpotlightSyncRun
+    from app.spotlight.ingest import INTERRUPTED, mark_interrupted_runs
+    with app.app_context():
+        db.session.add(SpotlightSyncRun(trigger="manual", status="running"))
+        db.session.commit()
+        assert mark_interrupted_runs() == 1
+        run = SpotlightSyncRun.query.one()
+        assert run.status == "failed" and run.error_message == INTERRUPTED
+        assert mark_interrupted_runs() == 0
+
+
+def test_runs_page_shows_the_scheduled_minute(app):
+    app.config.update(SPOTLIGHT_SYNC_ENABLED=True, SPOTLIGHT_SYNC_HOUR=5,
+                      SPOTLIGHT_SYNC_MINUTE=30)
+    c = app.test_client()
+    _login(c)
+    assert b"daily at 05:30" in c.get("/ingest/runs").data
+
+
+# ── Review 2026-11-03, section 3: one bad record, not the run ────────────────
+def test_a_failing_record_rolls_back_alone(app, monkeypatch):
+    """Two failure kinds in one batch: a value that will not parse, after the
+    new row was already added, and a database error that, without a
+    savepoint, would leave the session refusing every later record."""
+    import app.spotlight.ingest as ingest
+    from app.models import db
+    from app.models_spotlight import SpotlightFinding, SpotlightHost, SpotlightSyncRun
+
+    bad_value = rec(2, cve="CVE-2099-0002")
+    bad_value["cve"]["base_score"] = "not-a-number"
+    db_error = rec(3, cve="CVE-2099-0003")
+    db_error["_force_db_error"] = True
+
+    real = ingest.upsert_finding
+
+    def upsert(record, host, run_seen=None):
+        if record.get("_force_db_error"):
+            db.session.add(SpotlightHost(aid=AID))   # duplicate unique aid
+            db.session.flush()
+        return real(record, host, run_seen)
+
+    monkeypatch.setattr(ingest, "upsert_finding", upsert)
+    sync(app, monkeypatch, [rec(1), bad_value, db_error, rec(4, cve="CVE-2099-0004")])
+
+    with app.app_context():
+        cves = sorted(f.cve_id for f in SpotlightFinding.query)
+        assert cves == [CVE, "CVE-2099-0004"], "good records lost or a half row kept"
+        run = SpotlightSyncRun.query.one()
+        assert run.status == "success"
+        assert (run.records_fetched, run.parse_errors, run.findings_created) == (4, 2, 2)
+
+
+def test_hosts_counter_skips_hosts_whose_findings_are_all_suppressed(app, monkeypatch):
+    from app.models import db
+    from app.models_spotlight import SpotlightFinding
+    from app.routes.ingest_routes import _totals
+    other = "fff000111222"
+    sync(app, monkeypatch, [rec(1), rec(2, aid=other)])
+    with app.app_context():
+        assert _totals()["hosts"] == 2
+        SpotlightFinding.query.filter_by(aid=other).update({"is_suppressed": True})
+        db.session.commit()
+        assert _totals()["hosts"] == 1

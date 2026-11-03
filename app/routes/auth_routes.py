@@ -138,10 +138,10 @@ def oidc_callback():
     role = _role_from_groups(groups, current_app.config)
     if role is None:
         current_app.logger.warning(
-            "OIDC login denied for %s — not a member of any authorised group.", email
+            "OIDC login denied for %s: not a member of any authorized group.", email
         )
         flash(
-            "Your account is not authorised to access this application. "
+            "Your account is not authorized to access this application. "
             "Contact an administrator.",
             "danger",
         )

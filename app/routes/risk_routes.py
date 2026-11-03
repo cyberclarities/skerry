@@ -350,10 +350,17 @@ def delete_vulnerability(risk_pk, vuln_pk):
     _require_edit_rights(risk)
     finding = VulnerabilityFinding.query.filter_by(id=vuln_pk, risk_id=risk.id).first_or_404()
     cve = finding.cve_id
+    from app.models_spotlight import SpotlightFinding
+    from app.spotlight.elevate import release_findings
+    released = release_findings(
+        SpotlightFinding.query.filter(SpotlightFinding.vuln_finding_id == finding.id),
+        risk.risk_id)
     db.session.delete(finding)
     log_audit(risk, current_user, "updated", {"vulnerability_finding": (cve or "removed", None)})
     db.session.commit()
-    flash("Vulnerability finding removed.", "success")
+    flash("Vulnerability finding removed."
+          + (" Its Spotlight finding is back in the ingest queue as New." if released else ""),
+          "success")
     return redirect(url_for("risks.detail", risk_pk=risk.id))
 
 
@@ -538,9 +545,12 @@ def _retire_history(risk: Risk):
            SELECT * FROM audit_log WHERE risk_id = -<id of the deleted entry>
     3. Clear Spotlight links to the risk. Those are plain integers with no
        foreign key, so after a reuse they would point at the wrong risk.
-       SpotlightElevation.risk_ref keeps the readable reference.
+       SpotlightElevation.risk_ref keeps the readable reference. The staged
+       findings go back to the queue as New: the risk that was tracking
+       them is gone, and the CVE is still there.
     """
     from app.models_spotlight import SpotlightElevation, SpotlightFinding
+    from app.spotlight.elevate import release_findings
 
     entry = AuditLog(risk_id=risk.id, user_id=current_user.id, action="deleted",
                      field_name="risk_id", old_value=risk.risk_id)
@@ -557,7 +567,7 @@ def _retire_history(risk: Risk):
     staged = SpotlightFinding.query.filter(
         db.or_(SpotlightFinding.risk_id == risk.id,
                SpotlightFinding.vuln_finding_id.in_(vuln_ids or [-1])))
-    staged.update({"risk_id": None, "vuln_finding_id": None}, synchronize_session=False)
+    release_findings(staged, risk.risk_id)
 
 
 def _snapshot(risk: Risk) -> dict:

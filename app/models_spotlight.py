@@ -43,6 +43,14 @@ INGEST_ELEVATED = "Elevated"
 INGEST_DISMISSED = "Dismissed"
 INGEST_STATES = [INGEST_NEW, INGEST_TRIAGED, INGEST_ELEVATED, INGEST_DISMISSED]
 
+# Spotlight exploit_status codes (cve facet) and what CrowdStrike calls them.
+EXPLOIT_STATUS_LABELS = {
+    0: "Unproven",
+    30: "Available",
+    60: "Easily accessible",
+    90: "Actively used",
+}
+
 
 class SpotlightHost(db.Model):
     """One asset, keyed on the CrowdStrike agent ID (aid).
@@ -167,7 +175,10 @@ class SpotlightFinding(db.Model):
     first_ingested_at = db.Column(db.DateTime, default=_utcnow)
     last_ingested_at = db.Column(db.DateTime, default=_utcnow, index=True)
     ingest_count = db.Column(db.Integer, default=1)
-    raw_payload = db.Column(db.Text)  # the API record as returned, for audit
+    # The API record as returned, for audit. Up to 200 KB a row, and no list
+    # view or sync step reads it, so it loads only when asked for by name.
+    # Loading it with every row is what ran a large tenant out of memory.
+    raw_payload = db.deferred(db.Column(db.Text))
 
     __table_args__ = (
         db.Index("ix_spotlight_findings_queue", "ingest_state", "spotlight_status"),
@@ -206,12 +217,7 @@ class SpotlightFinding(db.Model):
 
     @property
     def exploit_status_label(self):
-        return {
-            0: "Unproven",
-            30: "Available",
-            60: "Easily accessible",
-            90: "Actively used",
-        }.get(self.exploit_status, "Unknown")
+        return EXPLOIT_STATUS_LABELS.get(self.exploit_status, "Unknown")
 
     def __repr__(self):
         return f"<SpotlightFinding {self.cve_id} on {self.hostname or self.aid}>"
