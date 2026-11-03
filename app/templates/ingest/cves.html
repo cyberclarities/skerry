@@ -42,6 +42,32 @@
   <input type="hidden" name="back" value="{{ request.full_path }}">
   {# The server re-applies these, so a delete covers exactly what is on screen. #}
   {% for k, v in carry.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+{% if current_user.is_operator %}
+<div class="card shadow-sm mb-3 border-danger-subtle">
+  <div class="card-body">
+    <div class="row g-2 align-items-end">
+      <div class="col-md-6">
+        <label class="form-label small text-muted mb-1">Reason (optional, kept on the Deleted list)</label>
+        <input type="text" name="reason" class="form-control form-control-sm"
+               placeholder="e.g. same Chrome update fixes these; tracking under the oldest CVE">
+      </div>
+      <div class="col-md-6 text-md-end">
+        <span class="small text-muted me-2" id="selected-count">0 selected</span>
+        <button type="submit" class="btn btn-sm btn-danger" id="delete-cves" disabled
+                data-confirm="Delete every finding for the selected CVEs that matches the current filters? They stay out of the queue unless they close and reopen. Findings attached to a risk are left alone.">
+          <i class="bi bi-trash"></i> Delete selected CVEs
+        </button>
+      </div>
+    </div>
+    <p class="small text-muted mb-0 mt-2">
+      Check the CVEs to delete in the first column below. Sort by <strong>Product</strong>
+      to see every CVE for one product together, keep the one
+      you will track, and delete the rest. Only findings matching the filters above are
+      deleted, so filtering to one host type deletes only on those hosts.
+    </p>
+  </div>
+</div>
+{% endif %}
 <div class="card shadow-sm">
   <div class="table-responsive">
     <table class="table table-sm table-hover mb-0 align-middle">
@@ -110,31 +136,6 @@
   </div>
 </div>
 
-{% if current_user.is_operator %}
-<div class="card shadow-sm mt-3">
-  <div class="card-body">
-    <div class="row g-2 align-items-end">
-      <div class="col-md-6">
-        <label class="form-label small text-muted mb-1">Reason (optional, kept on the Deleted list)</label>
-        <input type="text" name="reason" class="form-control form-control-sm"
-               placeholder="e.g. same Chrome update fixes these; tracking under the oldest CVE">
-      </div>
-      <div class="col-md-6 text-md-end">
-        <span class="small text-muted me-2" id="selected-count">0 selected</span>
-        <button type="submit" class="btn btn-sm btn-danger"
-                data-confirm="Delete every finding for the selected CVEs that matches the current filters? They stay out of the queue unless they close and reopen. Findings attached to a risk are left alone.">
-          <i class="bi bi-trash"></i> Delete selected CVEs
-        </button>
-      </div>
-    </div>
-    <p class="small text-muted mb-0 mt-2">
-      Sort by <strong>Product</strong> to see every CVE for one product together, keep the one
-      you will track, and delete the rest. Only findings matching the filters above are
-      deleted, so filtering to one host type deletes only on those hosts.
-    </p>
-  </div>
-</div>
-{% endif %}
 </form>
 
 {% if pages > 1 %}
@@ -155,11 +156,11 @@
   (function () {
     var all = document.getElementById('check-all');
     var count = document.getElementById('selected-count');
+    var button = document.getElementById('delete-cves');
     function refresh() {
-      if (count) {
-        var n = document.querySelectorAll('.row-check:checked').length;
-        count.textContent = n + ' selected';
-      }
+      var n = document.querySelectorAll('.row-check:checked').length;
+      if (count) { count.textContent = n + ' selected'; }
+      if (button) { button.disabled = n === 0; }
     }
     all?.addEventListener('change', function (e) {
       document.querySelectorAll('.row-check').forEach(function (cb) { cb.checked = e.target.checked; });

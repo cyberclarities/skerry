@@ -409,3 +409,11 @@ def test_deleted_list_is_paged(client):
     assert "130 deleted finding(s)" in first
     assert first.count("<code>CVE-2099-0001</code>") == 100
     assert second.count("<code>CVE-2099-0001</code>") == 30
+
+
+def test_bulk_delete_bar_sits_above_the_cve_table(client):
+    """With 100 rows a page, a bar under the table is a long scroll away."""
+    c, application = client
+    _load_sample(application)
+    body = c.get("/ingest/cves?min_age=0").data.decode()
+    assert body.index("Delete selected CVEs") < body.index('name="cve_ids"')
