@@ -33,7 +33,7 @@ Falcon Spotlight API
 
 The last arrow is a **copy**, not a link. Elevation writes ordinary
 `VulnerabilityFinding` rows against the new risk, so every existing export,
-Decision Request, open/High count, and "oldest open" line keeps working with
+Risk Action Request, open/High count, and "oldest open" line keeps working with
 no change at all. The staging row remembers which risk it became and which
 copied row carries its data — that is what makes "where did this number come
 from?" answerable later.
@@ -338,7 +338,7 @@ yours.
 
 **Business process is left blank too**, and it is the one field that matters
 most. Spotlight cannot tell you what the host does for the business. Leave it
-empty and the executive summary reads like a scan report instead of a risk.
+empty and the action request reads like a scan report instead of a risk.
 
 Every suggestion, and the rationale that produced it, is written to the
 elevation record and appended to the risk's notes. So when someone asks in

@@ -32,9 +32,9 @@
     <a href="{{ url_for('risks.edit_risk', risk_pk=risk.id) }}" class="btn btn-sm btn-primary">
       <i class="bi bi-pencil"></i> Edit
     </a>
-    <a href="{{ url_for('risks.decision_request', risk_pk=risk.id) }}" class="btn btn-sm btn-outline-primary"
-       title="Generate a Risk Decision Request / Acceptance form for signature">
-      <i class="bi bi-file-earmark-word"></i> Decision / Acceptance Form
+    <a href="{{ url_for('risks.action_request', risk_pk=risk.id) }}" class="btn btn-sm btn-outline-primary"
+       title="Generate a Risk Action Request asking the CIO and CISO to mandate a course of action">
+      <i class="bi bi-file-earmark-word"></i> Action Request
     </a>
     {% endif %}
     {% if current_user.is_admin %}
@@ -275,7 +275,7 @@
     <div class="card shadow-sm mb-3" id="vulnerabilities">
       <div class="card-header py-2 small fw-semibold text-uppercase text-muted">
         Add Vulnerability Finding
-        <span class="text-muted fw-normal text-lowercase">— feeds the Decision Request evidence table</span>
+        <span class="text-muted fw-normal text-lowercase">· feeds the Action Request evidence table</span>
       </div>
       <div class="card-body">
         <form method="POST" action="{{ url_for('risks.add_vulnerability', risk_pk=risk.id) }}">

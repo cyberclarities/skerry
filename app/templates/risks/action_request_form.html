@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block title %}Risk Action Request · {{ risk.risk_id }} · Skerry{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('risks.list_risks') }}" class="text-muted text-decoration-none">Register</a>
+  &rsaquo; <a href="{{ url_for('risks.detail', risk_pk=risk.id) }}" class="text-muted text-decoration-none">{{ risk.risk_id }}</a>
+  &rsaquo; Action Request
+{% endblock %}
+
+{% block content %}
+<h5 class="fw-bold mb-1">Risk Action Request: {{ risk.risk_id }}</h5>
+<p class="text-muted small mb-3">
+  An action request asks the CIO and CISO to mandate a course of action on this risk. Everything the register
+  already knows (scores, controls, treatment, owner, vulnerability findings) is pulled in automatically. The
+  fields below belong to <em>this</em> request, not the risk record, so they are not stored; review and edit
+  them, then generate. You get <strong>two documents</strong>: a one-page Risk Action Request laid out as
+  Background, Issue, Options, and Recommendation, with a mandate block for both executives to sign; and a
+  Supporting Evidence document with the full risk mechanics, vulnerability detail, treatment options, and RACI.
+</p>
+
+<form method="POST" action="{{ url_for('risks.action_request', risk_pk=risk.id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  {% macro field(label, name, type="text", hint="", rows=2) %}
+  <div class="mb-3">
+    <label for="{{ name }}" class="form-label fw-semibold small mb-1">{{ label }}</label>
+    {% if type == "textarea" %}
+    <textarea class="form-control form-control-sm" id="{{ name }}" name="{{ name }}"
+              rows="{{ rows }}">{{ defaults.get(name, "") }}</textarea>
+    {% else %}
+    <input type="{{ type }}" class="form-control form-control-sm" id="{{ name }}" name="{{ name }}"
+           value="{{ defaults.get(name, "") }}">
+    {% endif %}
+    {% if hint %}<div class="form-text">{{ hint }}</div>{% endif %}
+  </div>
+  {% endmacro %}
+
+  {% macro card(title) %}
+  <div class="card shadow-sm mb-3">
+    <div class="card-header py-2 small fw-semibold text-uppercase text-muted bg-primary text-white">{{ title }}</div>
+    <div class="card-body">{{ caller() }}</div>
+  </div>
+  {% endmacro %}
+
+  <div class="row g-3">
+    <div class="col-lg-8">
+
+      {% call card("Routing") %}
+        <div class="row">
+          <div class="col-md-6">{{ field("Requested by", "requestor_name", hint="You, sending the request. The risk owner (" ~ (risk.risk_owner or "not set") ~ ") comes from the register and acknowledges separately.") }}</div>
+          <div class="col-md-6">{{ field("Your role", "requestor_role", hint="Shown beside your name on both documents.") }}</div>
+        </div>
+        <div class="row">
+          <div class="col-md-6">{{ field("Mandate requested from", "mandating_executives", hint="Both sign the mandate. Defaults to the CIO and CISO.") }}</div>
+          <div class="col-md-6">{{ field("Mandate needed by", "mandate_needed_by", type="date") }}</div>
+        </div>
+        <div class="row">
+          <div class="col-md-6">{{ field("Accountable executive", "accountable_executive", hint="Who owns the outcome once the action is mandated.") }}</div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold small mb-1">Priority level</label>
+            <select class="form-select form-select-sm" name="priority_level">
+              {% for p in priority_levels %}
+              <option value="{{ p }}" {{ "selected" if defaults.get("priority_level") == p }}>{{ p }}</option>
+              {% endfor %}
+            </select>
+            <div class="form-text">Suggested from the current RAG status ({{ risk.rag_status }}); adjust if needed.</div>
+          </div>
+        </div>
+        {{ field("Funding and resources to authorize", "funding_requested", hint="Budget range, teams, timeframe.") }}
+      {% endcall %}
+
+      {% call card("The Ask") %}
+        {{ field("Subject line", "exec_subject", hint="Shown as \"" ~ risk.risk_id ~ ": <subject>\" at the top of both documents. Defaults to the business process or asset.") }}
+        {{ field("The ask, one paragraph", "executive_ask", type="textarea", rows=4, hint="Opens the one-page request: what you are asking them to mandate, by when, and what happens if they do not.") }}
+        {{ field("The ask, one sentence", "big_ask", type="textarea", rows=2, hint="Section 1a of the Supporting Evidence. Drafted from the risk's treatment and threat; tighten before sending.") }}
+      {% endcall %}
+
+      {% call card("1. Background") %}
+        {{ field("Background, separate paragraphs with a blank line", "background", type="textarea", rows=4, hint="What the reader needs to know before the issue makes sense. Defaults to the risk's threat description. The Risk at a Glance table is added under it automatically.") }}
+      {% endcall %}
+
+      {% call card("2. Issue") %}
+        {{ field("The issue, one point per line", "issue_bullets", type="textarea", rows=4, hint="Why this needs action now. Each line becomes a bullet.") }}
+      {% endcall %}
+
+      {% call card("3. Options") %}
+        <div class="row">
+          <div class="col-md-6">
+            <label class="form-label fw-semibold small mb-1">Recommended option</label>
+            <select class="form-select form-select-sm" name="suggested_treatment">
+              {% for t in ["Mitigate", "Accept", "Transfer", "Avoid"] %}
+              <option value="{{ t }}" {{ "selected" if defaults.get("suggested_treatment") == t }}>{{ t }}</option>
+              {% endfor %}
+            </select>
+            <div class="form-text">
+              Marked ★ RECOMMENDED among the four boxes. Defaults to the register's treatment
+              ({{ risk.treatment or "not set" }}); if you pick something else, both documents show the
+              register's value as the current treatment and say it is not recommended.
+            </div>
+          </div>
+        </div>
+        <p class="text-muted small mt-3 mb-2">
+          Leave these blank if Avoid or Transfer are live options. A reason marks that box "not viable" and becomes
+          its trade-off on the Supporting Evidence table.
+        </p>
+        {{ field("Why Avoid is not viable", "avoid_not_viable_reason", type="textarea", rows=2) }}
+        {{ field("Why Transfer is not viable", "transfer_not_viable_reason", type="textarea", rows=2) }}
+      {% endcall %}
+
+      {% call card("4. Recommendation") %}
+        {{ field("Recommended action, one step per line", "recommended_action_bullets", type="textarea", rows=4, hint="Each line becomes a bullet under the recommendation. Defaults to the risk's remediation action.") }}
+      {% endcall %}
+
+      <h6 class="text-muted small text-uppercase fw-semibold mt-4 mb-2">Supporting Evidence only</h6>
+
+      {% call card("Risk Narrative") %}
+        {{ field("Narrative, separate paragraphs with a blank line", "risk_narrative", type="textarea", rows=6, hint="Section 3 of the Supporting Evidence: how this risk came about and what is at stake.") }}
+      {% endcall %}
+
+      {% call card("Business Impact") %}
+        {{ field("Operations impact", "impact_operations", type="textarea", rows=2) }}
+        {{ field("Financial: cost-to-treat note", "impact_financial_note", hint="The register's exposure range is added automatically; add a cost-to-treat note if useful.") }}
+        {{ field("Customers and stakeholders impact", "impact_customers", type="textarea", rows=2) }}
+        {{ field("Legal, regulatory, and reputation", "impact_legal", type="textarea", rows=2, hint="Defaults to the risk's regulatory obligation.") }}
+      {% endcall %}
+
+      {% call card("RACI") %}
+        <div class="row">
+          <div class="col-md-6">{{ field("Responsible", "raci_responsible", hint="Defaults to the risk's action owner. Also shown under the recommendation.") }}</div>
+          <div class="col-md-6">{{ field("Accountable", "raci_accountable", hint="Usually the accountable executive above.") }}</div>
+        </div>
+        <div class="row">
+          <div class="col-md-6">{{ field("Consulted", "raci_consulted") }}</div>
+          <div class="col-md-6">{{ field("Informed", "raci_informed") }}</div>
+        </div>
+      {% endcall %}
+
+      {% call card("Additional Actions") %}
+        <p class="text-muted small">The risk's remediation action, owner, due date, and status fill row 1 of the action tracker. Add up to two more if the plan has more moving parts.</p>
+        {% for n in [2, 3] %}
+        <div class="row g-2 mb-2 align-items-end">
+          <div class="col-md-5">{{ field("Action " ~ n, "action" ~ n ~ "_desc") }}</div>
+          <div class="col-md-3">{{ field("Owner", "action" ~ n ~ "_owner") }}</div>
+          <div class="col-md-2">{{ field("Due", "action" ~ n ~ "_due", type="date") }}</div>
+          <div class="col-md-2">{{ field("Status", "action" ~ n ~ "_status") }}</div>
+        </div>
+        {% endfor %}
+      {% endcall %}
+
+      {% call card("Assumptions, Dependencies, Review Trigger") %}
+        {{ field("Assumptions", "assumptions", type="textarea", rows=2) }}
+        {{ field("Dependencies", "dependencies", type="textarea", rows=2) }}
+        {{ field("Review trigger", "review_trigger", type="textarea", rows=2) }}
+      {% endcall %}
+
+      <button type="submit" class="btn btn-primary">
+        <i class="bi bi-file-earmark-zip"></i> Generate Action Request (.zip, 2 Word files)
+      </button>
+      <a href="{{ url_for('risks.detail', risk_pk=risk.id) }}" class="btn btn-outline-secondary">Cancel</a>
+    </div><!-- /col-lg-8 -->
+
+    <!-- Sidebar: what's auto-filled -->
+    <div class="col-lg-4">
+      <div class="card shadow-sm mb-3">
+        <div class="card-header py-2 small fw-semibold text-uppercase text-muted">Pulled from the Register</div>
+        <div class="card-body small">
+          <div class="mb-2"><span class="text-muted">Risk ID</span><br><strong>{{ risk.risk_id }}</strong></div>
+          <div class="mb-2"><span class="text-muted">Threat</span><br>{{ risk.threat_description or "Not set" }}</div>
+          <div class="mb-2"><span class="text-muted">Likelihood × Impact</span><br>
+            {{ risk.likelihood or "?" }}/5 ({{ likelihood_labels.get(risk.likelihood, "") }}) ×
+            {{ risk.impact or "?" }}/5 ({{ impact_labels.get(risk.impact, "") }})
+          </div>
+          <div class="mb-2"><span class="text-muted">Inherent / Residual</span><br>
+            {{ risk.inherent_risk_score or "?" }} / {{ risk.residual_risk_score or "?" }}
+            <span class="badge badge-rag-{{ risk.rag_status }}">{{ risk.rag_status }}</span>
+          </div>
+          <div class="mb-2"><span class="text-muted">Treatment on the register</span><br>{{ risk.treatment or "Not set" }}</div>
+          <div class="mb-2"><span class="text-muted">Risk owner</span><br>{{ risk.risk_owner or "Not set" }}</div>
+          <div class="mb-2"><span class="text-muted">Exceeds risk appetite?</span><br>{{ "Yes" if risk.exceeds_risk_appetite else "No" }}</div>
+          <div class="mb-0">
+            <span class="text-muted">Vulnerability findings</span><br>
+            {{ risk.open_vuln_count }} open ({{ risk.high_vuln_count }} High){% if risk.oldest_vuln_days %}, oldest {{ risk.oldest_vuln_days }} days{% endif %}
+            <a href="{{ url_for('risks.detail', risk_pk=risk.id) }}#vulnerabilities" class="d-block small">Manage findings on the risk record &rsaquo;</a>
+          </div>
+        </div>
+      </div>
+      <div class="alert alert-secondary small">
+        Generating doesn't change the risk record; it adds one audit entry. The one-page request has the four
+        options as boxes, signature lines for the CIO and the CISO, and an acknowledgement line for the risk
+        owner. The mandate stands when both executives have signed. Print, sign, or route the documents however
+        your process calls for.
+      </div>
+    </div>
+  </div>
+</form>
+{% endblock %}

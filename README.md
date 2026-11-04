@@ -22,8 +22,8 @@ and role-based access underneath it — not a platform, and not trying to be one
 - **Trend log** — residual score over time per risk, with change against prior
 - **Dashboard** — RAG counts, likelihood/impact heat map, overdue actions,
   control test results, threat actor and category breakdowns
-- **Exports** — formatted Excel workbook, and a per-risk Decision / Acceptance
-  form (.docx) for routing to leadership and signature
+- **Exports** — formatted Excel workbook, and a per-risk Risk Action Request
+  (.docx) asking the CIO and CISO to mandate a course of action
 - **Email notifications** — daily overdue, review-due, and board escalation
   notices (optional; off unless SMTP is configured)
 - **Access control** — viewer, operator, and admin roles, with local accounts or

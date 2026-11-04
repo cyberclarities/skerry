@@ -39,7 +39,7 @@ test in `tests/test_security_fixes.py`.
   once to the startup log
 - Role-based access control at the route level: viewer, operator, admin.
   Operators can change only risks they created or own, and that one rule
-  covers editing, trend entries, vulnerability findings, and Decision Request
+  covers editing, trend entries, vulnerability findings, and Risk Action Request
   exports *(tested)*. Deleting a risk is admin-only *(tested)*
 - Field-level audit log on every risk change. The log is not deleted with the
   risk, and the deletion itself is recorded *(tested)*

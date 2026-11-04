@@ -316,7 +316,7 @@ def test_2_4_operator_cannot_change_someone_elses_risk(app):
     assert c.post(f"/risks/{pk}/trend", data={}).status_code == 403
     assert c.post(f"/risks/{pk}/vulnerability", data={"cve_id": "CVE-2"}).status_code == 403
     assert c.post(f"/risks/{pk}/vulnerability/{vid}/delete").status_code == 403
-    assert c.get(f"/risks/{pk}/decision-request").status_code == 403
+    assert c.get(f"/risks/{pk}/action-request").status_code == 403
     assert c.get(f"/risks/{pk}/edit").status_code == 403
 
 

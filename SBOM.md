@@ -55,7 +55,7 @@
 | app/seed.py | Seed data | NIST CSF 2.0 subcategory data, default lookup values |
 | app/email_utils.py | Notification | SMTP notification logic, APScheduler daily job at 07:00 |
 | app/decorators.py | Authorization | Role enforcement decorators |
-| app/decision_request.py | Business logic | Builds the docxtpl render context for the per-risk Decision / Acceptance Form (.docx) |
+| app/action_request.py | Business logic | Builds the docxtpl render context for the per-risk Risk Action Request (.docx) |
 | app/routes/auth_routes.py | Blueprint | Local auth, Azure AD OIDC login / callback, logout |
 | app/routes/risk_routes.py | Blueprint | Risk CRUD, trend log, audit log |
 | app/routes/dashboard_routes.py | Blueprint | Dashboard |
@@ -67,7 +67,7 @@
 | app/models_spotlight.py | Data layer | Spotlight staging tables: hosts, findings, elevations, sync runs |
 | app/spotlight/ | Integration | Falcon API client, ingest normalizer, elevation, score suggestions |
 | app/static/ | Brand assets | Favicon set, touch and PWA icons, and the Skerry mark (SVG) |
-| scripts/build_exec_summary_template.py | Build script | Generates the Executive Summary .docx template consumed by docxtpl |
+| scripts/build_exec_summary_template.py | Build script | Generates the one-page Risk Action Request .docx template consumed by docxtpl |
 | scripts/build_supporting_evidence_template.py | Build script | Generates the Supporting Evidence .docx template consumed by docxtpl |
 | docker-entrypoint.sh | Container entrypoint | Gives `/app/data` to the app user, then drops from root before Gunicorn starts |
 | run.py | Entrypoint | Gunicorn WSGI entrypoint |
@@ -108,10 +108,10 @@ The 16 packages declared in `requirements.txt`.
 | SPDXRef-wtforms | WTForms | 3.2.1 | BSD-3-Clause | Form validation |
 | SPDXRef-sqlalchemy | SQLAlchemy | 2.0.36 | MIT | ORM / database abstraction |
 | SPDXRef-werkzeug | Werkzeug | 3.1.9 | BSD-3-Clause | WSGI utilities, ProxyFix middleware |
-| SPDXRef-authlib | Authlib | 1.6.12 | BSD-3-Clause | OIDC / OAuth2 client (Azure AD SSO) |
+| SPDXRef-authlib | Authlib | 1.9.1 | BSD-3-Clause | OIDC / OAuth2 client (Azure AD SSO) |
 | SPDXRef-requests | requests | 2.33.0 | Apache-2.0 | HTTP client (OIDC discovery) |
 | SPDXRef-openpyxl | openpyxl | 3.1.5 | MIT | Excel (.xlsx) export |
-| SPDXRef-docxtpl | docxtpl | 0.19.1 | LGPL-2.1 | Word (.docx) rendering for the Decision / Acceptance Form |
+| SPDXRef-docxtpl | docxtpl | 0.19.1 | LGPL-2.1 | Word (.docx) rendering for the Risk Action Request |
 | SPDXRef-apscheduler | APScheduler | 3.10.4 | MIT | Background scheduler (daily email notifications) |
 | SPDXRef-python-dotenv | python-dotenv | 1.2.2 | BSD-3-Clause | .env file loading |
 | SPDXRef-email-validator | email-validator | 2.2.0 | Unlicense | Email address validation |
@@ -200,7 +200,7 @@ here.
 
 | PackageName | Version | License | Required By |
 |---|---|---|---|
-| dnspython | 2.8.0 | ISC | email-validator |
+| dnspython | 2.9.0 | ISC | email-validator (pinned directly in requirements.txt) |
 
 ---
 
@@ -334,6 +334,8 @@ and are invisible to container image scanners. Track them separately.
 | 2026-08-11 | Removed WeasyPrint and its Alpine runtime libraries (Pango, Cairo, GDK-PixBuf, HarfBuzz, Fontconfig, ttf-dejavu). Added docxtpl for the Decision / Acceptance Form export. |
 | 2026-08-11 | Version bump to 4.0 and rename to Skerry. Corrected three packages listed as dependencies that pip does not install (oauthlib, PyJWT, python-dateutil). Added the nine-package Flask-Limiter subtree, which was absent. Refreshed all transitive versions and licences from distribution metadata. |
 | 2026-10-16 | Security fixes from the pre-push review. Bumped Flask 3.1.0 → 3.1.3, Werkzeug 3.1.3 → 3.1.9, Authlib 1.3.2 → 1.6.12, requests 2.32.3 → 2.33.0, python-dotenv 1.0.1 → 1.2.2; `pip-audit` reports no known vulnerabilities in the direct dependencies. Added su-exec. Added subresource integrity to the CDN assets and moved htmx from unpkg to jsDelivr. Added the Spotlight components to the component list. Section 4 was **not** regenerated in this update; its transitive versions are still the 2026-08-11 resolution and may differ from what the bumped packages pull in. |
+| 2026-11-03 | Security fixes from the 2026-11-03 review. Bumped Authlib 1.6.12 → 1.9.1 and pinned dnspython 2.9.0, which clears CVE-2026-114605; `pip-audit` reports no known vulnerabilities. dnspython 2.9 requires Python 3.11 or newer; the container runs 3.12. Section 4 was updated for these two packages only. |
+| 2026-11-04 | The per-risk export was renamed from Decision / Acceptance Form to Risk Action Request; `app/decision_request.py` became `app/action_request.py`. No dependency change. |
 
 ---
 

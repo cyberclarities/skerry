@@ -1,20 +1,25 @@
-"""Risk Decision Request export — two documents from one Risk record.
+"""Risk Action Request export: two documents from one Risk record.
 
-Builds the docxtpl context for a single Risk record and merges it with the
-governance fields (RACI, priority, executive owner, the "ask", narrative,
-option viability) that the register doesn't track because they belong to a
-specific escalation event, not the risk itself.
+A Risk Action Request asks the CIO and CISO to mandate a course of action
+on one risk. The analysis is done; the documents carry the options, the
+recommendation, and a place for both executives to sign the mandate.
+
+This module builds the docxtpl context for a single Risk record and merges
+it with the fields that belong to one request rather than to the risk
+itself: who it goes to, the accountable executive, priority, the ask,
+background, issue, RACI, and option viability.
 
 The context built here is shared by two templates:
-  - risk_exec_summary_template.docx      — one page, for the Executive Core Team
-  - risk_supporting_evidence_template.docx — the full record behind that ask
+  - risk_exec_summary_template.docx       the one-page Risk Action Request
+  - risk_supporting_evidence_template.docx the full record behind it
 
-Nothing here is persisted. The generated documents are meant to be reviewed,
-edited if needed, and manually signed by the risk owner and the Executive
-Core Team — the register stays the system of record for the risk; this is
-the routing packet for one decision. The one exception is vulnerability
-findings, which *are* persisted (VulnerabilityFinding) because the register
-is the right place for that data to live, independent of any one export.
+Nothing here is persisted. The generated documents are reviewed, edited if
+needed, and signed by hand: the CIO and CISO sign the mandate, and the risk
+owner acknowledges it. The register stays the system of record for the
+risk; this is the routing packet for one mandate. The one exception is
+vulnerability findings, which *are* persisted (VulnerabilityFinding)
+because the register is the right place for that data to live,
+independent of any one export.
 """
 from datetime import date
 from xml.sax.saxutils import escape as _xml_escape
@@ -23,20 +28,28 @@ from docxtpl import RichText
 
 from app.scoring import LIKELIHOOD_LABELS, IMPACT_LABELS, CONTROL_EFFECTIVENESS_LABELS
 
-DASH = "—"  # em dash, matches the app's existing "—" fallback style
+# Shown wherever the register has no value. Plain words, not a dash: these
+# documents go to executives, and an empty cell should say what it means.
+DASH = "Not recorded"
 
+# Who the request asks to mandate the action. Editable per request.
+MANDATING_EXECUTIVES = "CIO and CISO"
+
+# "mandate <verb> <subject>" in the one-sentence ask.
 TREATMENT_VERBS = {
-    "Mitigate": "approve remediation of",
-    "Accept": "formally accept",
-    "Transfer": "approve transferring",
-    "Avoid": "approve discontinuing the activity behind",
+    "Mitigate": "remediation of",
+    "Accept": "formal acceptance of",
+    "Transfer": "transfer of",
+    "Avoid": "discontinuing the activity behind",
 }
 
-# Priority suggested from current RAG status — editable by the preparer.
-PRIORITY_FROM_RAG = {"RED": "P1 — Immediate", "AMBER": "P2 — Within quarter", "GREEN": "P3 — Planned"}
+# Priority suggested from current RAG status, editable by the preparer.
+PRIORITY_LEVELS = ["P1: Immediate", "P2: Within quarter", "P3: Planned"]
+PRIORITY_FROM_RAG = {"RED": PRIORITY_LEVELS[0], "AMBER": PRIORITY_LEVELS[1],
+                     "GREEN": PRIORITY_LEVELS[2]}
 
-# Supporting Evidence options table (Section 5) — summary/pros/tradeoffs style.
-# Boilerplate, not risk-specific — the preparer should tighten before sending.
+# Supporting Evidence options table (Section 5): summary, pros, trade-offs.
+# Boilerplate, not risk-specific; the preparer should tighten before sending.
 OPTION_BOILERPLATE = {
     "Accept": dict(
         summary="Take no further action; document the exposure and hold it for a defined period.",
@@ -50,28 +63,30 @@ OPTION_BOILERPLATE = {
     ),
     "Mitigate": dict(
         summary="Reduce likelihood or impact through the remediation actions in Section 7.",
-        pros="Reduces likelihood/impact and aligns with policy.",
+        pros="Reduces likelihood and impact, and aligns with policy.",
         tradeoffs="Requires funding, change windows, and possible user impact.",
     ),
     "Transfer": dict(
-        summary="Shift part of the exposure via insurance, contract, or a third party.",
+        summary="Shift part of the exposure through insurance, contract, or a third party.",
         pros="Offloads some financial impact.",
         tradeoffs="Operational risk and reputational exposure stay with us.",
     ),
 }
 
-# Executive Summary decision block — short, approval-oriented text, not the
-# summary/pros/tradeoffs breakdown. {rag} is substituted for Accept.
+# One-page request, Options section: what each box mandates if checked.
+# {rag} is substituted for Accept.
 EXEC_OPTION_TEXT = {
-    "Mitigate": "Approve immediate treatment plan, funding/resources, and executive accountable owner.",
-    "Accept": "Formally accept residual {rag} risk through a defined review date, with documented compensating controls and accountable executive approval.",
-    "Avoid": "Stop or remove the activity, asset, or exposure creating the risk.",
-    "Transfer": "Shift part of the exposure via insurance, contract, or a third party.",
+    "Mitigate": "Mandate the treatment plan in the Recommendation, with the funding, resources, "
+                "and accountable executive it needs.",
+    "Accept": "Mandate formal acceptance of the residual {rag} risk through a set review date, "
+              "with documented compensating controls and a named accountable executive.",
+    "Avoid": "Mandate stopping or removing the activity, asset, or exposure that creates the risk.",
+    "Transfer": "Mandate shifting part of the exposure through insurance, contract, or a third party.",
 }
 
-# Options that can be marked "not viable" at export time — Mitigate and
-# Accept are always live choices; Avoid/Transfer often aren't for a system
-# that has to keep running.
+# Options that can be marked "not viable" at export time. Mitigate and
+# Accept are always live choices; Avoid and Transfer often aren't for a
+# system that has to keep running.
 VIABILITY_OVERRIDABLE = ("Avoid", "Transfer")
 
 
@@ -95,7 +110,7 @@ def _money(val):
 
 
 def _money_abbrev(val):
-    """$10,000 -> $10K, $1,000,000 -> $1M. Used on the Executive Summary's
+    """$10,000 -> $10K, $1,000,000 -> $1M. Used on the one-page request's
     Risk at a Glance table, which is one line and needs to stay short."""
     if val is None:
         return None
@@ -111,10 +126,10 @@ def _yesno(val):
 
 
 def _rt(text, color_hex, bold=True):
-    """One colored/bold run as a docxtpl RichText, for the Executive
-    Summary decision block's label suffix (★ RECOMMENDED in green,
-    (not viable) in gray) — plain string concatenation can't carry color,
-    so this is the one spot in the context that isn't a plain string."""
+    """One colored, bold run as a docxtpl RichText, for the label suffix on
+    each option box (★ RECOMMENDED in blue, (not viable) in gray). Plain
+    string concatenation can't carry color, so this is the one spot in the
+    context that isn't a plain string."""
     if not text:
         return ""
     rt = RichText()
@@ -130,51 +145,56 @@ def _bullets(text):
 
 
 def _paragraphs(text):
-    """Textarea (blank-line-separated) -> list of paragraphs, for the risk
-    narrative — several paragraphs of prose, not a bullet list."""
+    """Textarea (blank-line-separated) -> list of paragraphs, for prose
+    fields such as the background and the risk narrative."""
     if not text:
         return []
     return [p.strip() for p in text.split("\n\n") if p.strip()]
 
 
 def suggested_defaults(risk, current_user):
-    """Pre-fill values for the export-time form — all editable before generating."""
+    """Pre-fill values for the export form. All of them are editable."""
     due = risk.due_date
-    priority = PRIORITY_FROM_RAG.get(risk.rag_status, "P2 — Within quarter")
+    priority = PRIORITY_FROM_RAG.get(risk.rag_status, PRIORITY_LEVELS[1])
+    to = MANDATING_EXECUTIVES
 
     treatment = risk.treatment or "Mitigate"
-    verb = TREATMENT_VERBS.get(treatment, "decide how to treat")
-    subject = (risk.threat_description or "this risk").strip()
-    if len(subject) > 110:
-        subject = subject[:107].rstrip() + "..."
-    ask = f"Executive Core Team: {verb} {subject}"
+    verb = TREATMENT_VERBS.get(treatment, "action on")
+    exec_subject = (risk.business_process or risk.asset_system or "this system").strip()
+    # Name the risk and what it touches. The threat description is a full
+    # sentence of its own and does not read after "mandate remediation of".
+    ask = f"{to}: mandate {verb} {risk.risk_id}, the risk to {exec_subject}"
     if due:
-        ask += f" by {due.isoformat()}"
+        ask += f", by {due.isoformat()}"
     ask += "."
 
-    # Executive Ask paragraph (Executive Summary) — longer than the 1a Big
-    # Ask above; states the decision, the score, and the fallback (accept
-    # with conditions) if the recommended direction isn't approved.
-    exec_subject = (risk.business_process or risk.asset_system or "this system").strip()
+    # The Ask paragraph on the one-page request. Longer than the one-line
+    # ask above: who is asked, for what, by when, and what happens if the
+    # recommended action is not mandated.
+    score = f" ({risk.residual_risk_score})" if risk.residual_risk_score is not None else ""
     exec_ask = (
-        "The Executive Core Team must decide"
-        + (f" by {due.isoformat()}" if due else "")
-        + f" how to treat a {risk.rag_status} residual risk"
-        + (f" ({risk.residual_risk_score})" if risk.residual_risk_score is not None else "")
-        + f" on {exec_subject}. The recommended direction is {treatment}. If remediation cannot be "
-        "approved, leadership must formally accept the residual risk with documented conditions and a review date."
+        f"We are asking the {to} to mandate {treatment} for a {risk.rag_status} residual "
+        f"risk{score} on {exec_subject}"
+        + (f", by {due.isoformat()}" if due else "")
+        + ". The options and our recommendation follow. If the recommended action is not "
+        "mandated, the residual risk stays with the business, and accepting it takes both "
+        "signatures, documented conditions, and a review date."
     )
+
+    background = (risk.threat_description or "").strip()
 
     return dict(
         requestor_name=current_user.name if current_user else "",
-        requestor_role="CISO",
-        executive_owner_requested="",
-        decision_needed_by=due.isoformat() if due else "",
+        requestor_role="",
+        mandating_executives=to,
+        accountable_executive="",
+        mandate_needed_by=due.isoformat() if due else "",
         priority_level=priority,
         big_ask=ask,
         exec_subject=exec_subject,
         executive_ask=exec_ask,
-        why_it_matters_bullets="",
+        background=background,
+        issue_bullets="",
         recommended_action_bullets=risk.remediation_action or "",
         risk_narrative="",
         impact_operations="",
@@ -187,7 +207,7 @@ def suggested_defaults(risk, current_user):
         raci_responsible=risk.action_owner or "",
         raci_accountable="",
         raci_consulted="",
-        raci_informed="Executive Core Team; affected business units",
+        raci_informed="CIO; CISO; affected business units",
         assumptions="",
         dependencies="",
         review_trigger="",
@@ -197,13 +217,13 @@ def suggested_defaults(risk, current_user):
 
 
 def build_context(risk, form_fields):
-    """Merge register data (auto-filled) with form_fields (governance data
-    collected at export time) into the full docxtpl render context shared
-    by both the Executive Summary and Supporting Evidence templates.
+    """Merge register data (auto-filled) with form_fields (the request's own
+    data, collected at export time) into the docxtpl render context shared
+    by the one-page request and the Supporting Evidence document.
 
-    form_fields is a plain dict, typically request.form from the export form —
-    every key here is expected to already be present (the form renders all of
-    them with the suggested_defaults() above).
+    form_fields is a plain dict, typically request.form from the export
+    form. The form renders every key with suggested_defaults() above, but a
+    missing key falls back to a bracketed prompt rather than failing.
     """
     f = form_fields
 
@@ -211,7 +231,7 @@ def build_context(risk, form_fields):
     residual = risk.residual_risk_score
 
     # Financial exposure: full numbers for Supporting Evidence, abbreviated
-    # for the Executive Summary's one-line glance table.
+    # for the one-line glance table on the one-page request.
     min_exp, max_exp = _money(risk.min_financial_exposure), _money(risk.max_financial_exposure)
     fin_parts = []
     if min_exp or max_exp:
@@ -250,39 +270,36 @@ def build_context(risk, form_fields):
 
         reason = reasons.get(key)
         if key in VIABILITY_OVERRIDABLE and reason:
-            summary = f"Not an Option. {summary}"
+            summary = f"Not viable. {summary}"
             tradeoffs = reason
 
         is_register = key == register_treatment
         is_suggested = key == suggested_treatment
-        if is_register and is_suggested:
-            summary = f"★ RECOMMENDED — {summary}"
-        elif is_suggested:
-            summary = f"★ SUGGESTED ACTION. {summary}"
+        if is_suggested:
+            summary = f"★ RECOMMENDED. {summary}"
         elif is_register:
-            summary = f"★ CURRENT STATE — Not Recommended. {summary}"
+            summary = f"CURRENT TREATMENT, NOT RECOMMENDED. {summary}"
 
         options[key.lower()] = dict(summary=summary, pros=pros, tradeoffs=tradeoffs)
 
     treatment_note = ""
     if suggested_treatment and register_treatment and suggested_treatment != register_treatment:
         treatment_note = (
-            f"Note: The register currently lists the CISO recommendation as {register_treatment}. "
-            f"However, the treatment analysis below identifies {suggested_treatment} as the suggested "
-            f"action and labels {register_treatment} as not recommended absent executive acceptance of "
-            "the residual risk."
+            f"Note: The register lists {register_treatment} as the current treatment. The analysis "
+            f"below recommends {suggested_treatment} instead. {register_treatment} is not recommended "
+            "unless the CIO and CISO formally accept the residual risk."
         )
 
-    # ── Options: Executive Summary decision block (short, per-option) ────
+    # ── Options: one-page request, one mandate box per option ────────────
     exec_options = {}
     for key in ("Mitigate", "Accept", "Avoid", "Transfer"):
         reason = reasons.get(key)
         if key in VIABILITY_OVERRIDABLE and reason:
-            text = f"Not viable — {reason}"
-            label_suffix = _rt("  (not viable)", "7A7974", bold=True)
+            text = f"Not viable: {reason}"
+            label_suffix = _rt("  (not viable)", "404040", bold=True)
         else:
             text = EXEC_OPTION_TEXT[key].format(rag=risk.rag_status)
-            label_suffix = _rt("  ★ RECOMMENDED", "00B050", bold=True) if key == suggested_treatment else ""
+            label_suffix = _rt("  ★ RECOMMENDED", "2E75B6", bold=True) if key == suggested_treatment else ""
         exec_options[key.lower()] = dict(text=text, label_suffix=label_suffix)
 
     acceptance_signoff = DASH
@@ -325,12 +342,13 @@ def build_context(risk, form_fields):
 
     ctx = dict(
         # Header / meta
-        request_id=f"RDR-{risk.risk_id}",
+        request_id=f"RAR-{risk.risk_id}",
         request_date=date.today().isoformat(),
         requestor_name=_s(f.get("requestor_name"), "[Name]"),
-        requestor_role=_s(f.get("requestor_role"), "CISO"),
-        executive_owner_requested=_s(f.get("executive_owner_requested"), "[CIO / COO / CEO]"),
-        decision_needed_by=_s(f.get("decision_needed_by"), "[Date]"),
+        requestor_role=_s(f.get("requestor_role"), "[Role]"),
+        mandating_executives=_s(f.get("mandating_executives"), MANDATING_EXECUTIVES),
+        accountable_executive=_s(f.get("accountable_executive"), "[Accountable executive]"),
+        mandate_needed_by=_s(f.get("mandate_needed_by"), "[Date]"),
         exec_subject=_s(f.get("exec_subject"), risk.business_process or risk.asset_system),
 
         # Source risk record
@@ -346,10 +364,11 @@ def build_context(risk, form_fields):
         related_incident_ref=_s(risk.related_incident_ref, "None"),
         nist_combined=nist_combined,
 
-        # Asks
+        # The ask, and the one-page request's Background / Issue / Recommendation
         big_ask=_s(f.get("big_ask"), "[Write the ask in one sentence.]"),
-        executive_ask=_s(f.get("executive_ask"), "[What decision is needed, by when, and what happens if it isn't approved.]"),
-        why_it_matters_bullets=_bullets(f.get("why_it_matters_bullets")),
+        executive_ask=_s(f.get("executive_ask"), "[What we are asking them to mandate, by when, and what happens if they do not.]"),
+        background_paragraphs=_paragraphs(f.get("background")),
+        issue_bullets=_bullets(f.get("issue_bullets")),
         recommended_action_bullets=_bullets(f.get("recommended_action_bullets")),
         risk_narrative_paragraphs=_paragraphs(f.get("risk_narrative")),
 
@@ -359,7 +378,7 @@ def build_context(risk, form_fields):
         impact_customers=_s(f.get("impact_customers"), "[Affected population, trust, contractual commitment.]"),
         impact_legal=_s(f.get("impact_legal"), "[Regulatory obligation, audit findings, brand impact.]"),
 
-        # Risk at a Glance (Executive Summary)
+        # Risk at a Glance (one-page request, Background)
         financial_exposure_abbrev=financial_exposure_abbrev,
         vuln_open_count=len(open_findings),
         vuln_high_count=high_count,
@@ -381,12 +400,16 @@ def build_context(risk, form_fields):
         control_effectiveness_val=_s(risk.control_effectiveness, "?"),
         control_effectiveness_label=_s(CONTROL_EFFECTIVENESS_LABELS.get(risk.control_effectiveness)),
         last_control_test_date=_date(risk.last_control_test_date, "Not tested"),
+        # One cell: "2026-09-01: Pass", or just "Not tested" when it never was.
+        last_control_test=(
+            f"{_date(risk.last_control_test_date)}: {_s(risk.control_test_result)}"
+            if risk.last_control_test_date else "Not tested"),
         control_test_result=_s(risk.control_test_result),
         residual_score=_s(residual),
         rag_status=risk.rag_status,
         exceeds_appetite=_yesno(risk.exceeds_risk_appetite),
 
-        # Options — Supporting Evidence table + note
+        # Options: Supporting Evidence table and note
         treatment_note=treatment_note,
         opt_accept_summary=options["accept"]["summary"],
         opt_accept_pros=options["accept"]["pros"],
@@ -401,7 +424,7 @@ def build_context(risk, form_fields):
         opt_transfer_pros=options["transfer"]["pros"],
         opt_transfer_tradeoffs=options["transfer"]["tradeoffs"],
 
-        # Options — Executive Summary decision block
+        # Options: one-page request mandate boxes
         exec_opt_mitigate_text=exec_options["mitigate"]["text"],
         exec_opt_mitigate_label=exec_options["mitigate"]["label_suffix"],
         exec_opt_accept_text=exec_options["accept"]["text"],
@@ -411,7 +434,7 @@ def build_context(risk, form_fields):
         exec_opt_transfer_text=exec_options["transfer"]["text"],
         exec_opt_transfer_label=exec_options["transfer"]["label_suffix"],
 
-        # Requested decision & priority
+        # The mandate requested, and priority
         treatment_direction=_s(register_treatment, "[Not yet set on the risk record]"),
         suggested_treatment=_s(suggested_treatment, "[Not yet set]"),
         priority_level=_s(f.get("priority_level"), "[P1 / P2 / P3]"),
@@ -420,11 +443,11 @@ def build_context(risk, form_fields):
 
         # RACI
         raci_responsible=_s(f.get("raci_responsible"), "[Director / team]"),
-        raci_accountable=_s(f.get("raci_accountable"), "[CIO / COO / Business owner]"),
+        raci_accountable=_s(f.get("raci_accountable"), "[Accountable executive]"),
         raci_consulted=_s(f.get("raci_consulted"), "[Risk, Legal, Finance, Service Owners]"),
-        raci_informed=_s(f.get("raci_informed"), "Executive Core Team; affected units"),
+        raci_informed=_s(f.get("raci_informed"), "CIO; CISO; affected business units"),
 
-        # Go deeper / action tracker
+        # Action and evidence tracker
         action1_desc=_s(risk.remediation_action, "[Action]"),
         action1_owner=_s(risk.action_owner, "[Name]"),
         action1_due=_date(risk.due_date, "[Date]"),
@@ -447,7 +470,7 @@ def build_context(risk, form_fields):
         vuln_summary=vuln_summary,
         vuln_findings=vuln_rows,
 
-        assumptions=_s(f.get("assumptions"), "[Only list assumptions that would materially change the decision if wrong.]"),
+        assumptions=_s(f.get("assumptions"), "[Only list assumptions that would change the mandate if wrong.]"),
         dependencies=_s(f.get("dependencies"), "[Key systems, vendors, or projects this depends on.]"),
         review_trigger=_s(f.get("review_trigger"), "[Date, threat intelligence, control failure, or material business change.]"),
     )
@@ -455,12 +478,12 @@ def build_context(risk, form_fields):
 
 
 def _escape_ctx(ctx):
-    """docxtpl inserts values into the docx XML without escaping them —
+    """docxtpl inserts values into the docx XML without escaping them:
     an unescaped '&', '<', or '>' silently corrupts or truncates the
     document (confirmed against docxtpl 0.19.1). Escape every string value
-    here, once, so nothing upstream has to remember to do it per-field.
-    Lists (bullets, narrative paragraphs, vuln rows) are escaped element-
-    or field-wise so docxtpl's {%p%}/{%tr%} loops still see a list/dicts.
+    here, once, so nothing upstream has to remember to do it per field.
+    Lists (bullets, paragraphs, vuln rows) are escaped element- or
+    field-wise so docxtpl's {%p%}/{%tr%} loops still see lists and dicts.
     """
     out = {}
     for k, v in ctx.items():

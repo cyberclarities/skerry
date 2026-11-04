@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from app.models import db, AuditLog, Risk, TrendLog, VulnerabilityFinding, NISTCSFReference, LookupItem
 from app.decorators import admin_required, operator_required, log_audit
 from app.scoring import LIKELIHOOD_LABELS, IMPACT_LABELS, CONTROL_EFFECTIVENESS_LABELS
-from app.decision_request import build_context, suggested_defaults
+from app.action_request import PRIORITY_LEVELS, build_context, suggested_defaults
 
 risks_bp = Blueprint("risks", __name__, url_prefix="/risks")
 
@@ -321,7 +321,7 @@ def add_vulnerability(risk_pk):
     """Add one vulnerability finding (typically one CVE) to a risk.
 
     Backs the vulnerability evidence table and open/High/oldest-open counts
-    on the Decision Request exports — this is the source of that data, not
+    on the Risk Action Request exports — this is the source of that data, not
     a field on the export form.
     """
     risk = db.get_or_404(Risk, risk_pk)
@@ -371,15 +371,24 @@ def delete_vulnerability(risk_pk, vuln_pk):
     return redirect(url_for("risks.detail", risk_pk=risk.id))
 
 
-@risks_bp.route("/<int:risk_pk>/decision-request", methods=["GET", "POST"])
+@risks_bp.route("/<int:risk_pk>/decision-request")
 @operator_required
 def decision_request(risk_pk):
-    """Generate a Risk Decision Request .docx for one risk.
+    """Old address of the export, kept so bookmarks and links still land."""
+    return redirect(url_for("risks.action_request", risk_pk=risk_pk), code=301)
 
-    GET shows a short form for the handful of fields the register doesn't
-    track (RACI, priority, executive owner, the "ask") — everything else is
-    auto-filled from the risk record. POST renders the docx and returns it
-    as a download; nothing here is written back to the database.
+
+@risks_bp.route("/<int:risk_pk>/action-request", methods=["GET", "POST"])
+@operator_required
+def action_request(risk_pk):
+    """Generate a Risk Action Request for one risk: two .docx files in a zip.
+
+    The request asks the CIO and CISO to mandate a course of action. GET
+    shows a short form for the fields that belong to this request rather
+    than the risk (who it goes to, accountable executive, priority, the
+    ask, background, issue, RACI); everything else is pulled from the risk
+    record. POST renders the documents and returns them as a download.
+    Nothing here is written back to the risk, apart from an audit entry.
     """
     risk = db.get_or_404(Risk, risk_pk)
     _require_edit_rights(risk)
@@ -399,7 +408,7 @@ def decision_request(risk_pk):
         exec_summary.render(ctx)
         exec_out = io.BytesIO()
         exec_summary.save(exec_out)
-        exec_name = f"{risk.risk_id}_Executive_Summary_Decision_Request_{stamp}.docx"
+        exec_name = f"{risk.risk_id}_Risk_Action_Request_{stamp}.docx"
 
         evidence = DocxTemplate(os.path.join(exports_dir, "risk_supporting_evidence_template.docx"))
         evidence.render(ctx)
@@ -413,8 +422,8 @@ def decision_request(risk_pk):
             zf.writestr(evidence_name, evidence_out.getvalue())
         zip_out.seek(0)
 
-        filename = f"Risk_Decision_Request_{risk.risk_id}_{stamp}.zip"
-        log_audit(risk, current_user, "exported", {"decision_request": (None, filename)})
+        filename = f"Risk_Action_Request_{risk.risk_id}_{stamp}.zip"
+        log_audit(risk, current_user, "exported", {"action_request": (None, filename)})
         db.session.commit()
         return send_file(
             zip_out, download_name=filename, as_attachment=True,
@@ -423,9 +432,10 @@ def decision_request(risk_pk):
 
     defaults = suggested_defaults(risk, current_user)
     return render_template(
-        "risks/decision_request_form.html",
+        "risks/action_request_form.html",
         risk=risk,
         defaults=defaults,
+        priority_levels=PRIORITY_LEVELS,
         likelihood_labels=LIKELIHOOD_LABELS,
         impact_labels=IMPACT_LABELS,
     )

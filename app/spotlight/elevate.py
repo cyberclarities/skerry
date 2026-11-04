@@ -2,8 +2,8 @@
 
 The copy decision, stated up front: elevation writes ordinary
 `VulnerabilityFinding` rows against the new Risk. It does not point the
-existing exports at a new table. Every Decision Request, every open/High
-count, every "oldest open" line on the executive summary keeps working
+existing exports at a new table. Every Risk Action Request, every open/High
+count, every "oldest open" line on the one-page request keeps working
 exactly as it does today, because from the register's point of view nothing
 changed -- findings arrived the same way they always have.
 

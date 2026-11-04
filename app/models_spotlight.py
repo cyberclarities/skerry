@@ -19,7 +19,7 @@ Two deliberate constraints follow from that:
 
 2. **The staging tables are the system of record for provenance.** When a
    finding is elevated, its data is *copied* into a normal
-   `VulnerabilityFinding` row so every existing export, Decision Request,
+   `VulnerabilityFinding` row so every existing export, Risk Action Request,
    and count keeps working untouched. The staging row remembers what it
    became.
 """

@@ -192,7 +192,7 @@ class Risk(db.Model):
 
     # ── Vulnerability findings (aggregate) ───────────────────────────────────
     # Backs the "Vulnerabilities: N open (M High)" / "Oldest Open: D days"
-    # lines on the Decision Request exports. Open = anything not Remediated;
+    # lines on the Risk Action Request exports. Open = anything not Remediated;
     # days-open is computed from date_found, never stored, so it's never stale.
     @property
     def open_vulnerabilities(self):
@@ -250,7 +250,7 @@ class VulnerabilityFinding(db.Model):
     """One scanner finding (typically one CVE) tied to a Risk.
 
     This is deliberately narrow — it exists to back the vulnerability
-    evidence table on the Decision Request exports (open/High counts, oldest
+    evidence table on the Risk Action Request exports (open/High counts, oldest
     finding, the per-CVE remediation table) with real data instead of typed
     or memorized numbers. It is not a general vulnerability management
     system; it doesn't track rescans or close-out workflow beyond the

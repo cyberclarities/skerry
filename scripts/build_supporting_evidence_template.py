@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Builds the docxtpl SOURCE template for the Supporting Evidence document —
-the full record behind one Executive Summary Decision Request.
+"""Builds the docxtpl SOURCE template for the Supporting Evidence document,
+the full record behind one Risk Action Request.
 
 This produces a .docx with {{ jinja }} placeholders (not a filled
-document), styled to match the RDR-CR-010 Supporting Evidence reference:
-Azo Sans, teal headings, cream label-fill tables.
+document), in the colors of the organization's document template (PB-000):
+a navy title banner, navy section bars, gray label fills. No yellow.
 
 Run once to (re)generate app/templates/exports/risk_supporting_evidence_template.docx:
 
@@ -12,20 +12,19 @@ Run once to (re)generate app/templates/exports/risk_supporting_evidence_template
 
 Edit THIS script (not the .docx by hand) when the template needs to
 change, so the Jinja tags never get fragmented across Word runs. Paired
-with scripts/build_exec_summary_template.py — both draw their context
-from app/decision_request.py's build_context().
+with scripts/build_exec_summary_template.py; both draw their context
+from app/action_request.py's build_context().
 """
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _docx_style import (  # noqa: E402
-    TEAL, GRAY, BODY_TXT, CREAM_FILL, FONT,
+    GRAY, BODY_TXT, LABEL_FILL,
     add_table, add_data_row,
-    label_value_table, h1, h2, body, body_multi, tag_p, spacer,
+    label_value_table, title_banner, h1, h2, body, body_multi, tag_p, spacer,
     add_header_footer, new_letter_doc,
 )
-from docx.shared import Pt
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUTPUT_PATH = os.path.join(REPO_ROOT, "app", "templates", "exports", "risk_supporting_evidence_template.docx")
@@ -39,33 +38,21 @@ add_header_footer(
 )
 
 # ── Title block ──────────────────────────────────────────────────────────
-p = doc.add_paragraph()
-p.paragraph_format.space_after = Pt(2)
-r = p.add_run("SUPPORTING EVIDENCE")
-r.font.name = FONT
-r.font.size = Pt(14)
-r.font.bold = True
-r.font.color.rgb = BODY_TXT
-
-p2 = doc.add_paragraph()
-p2.paragraph_format.space_after = Pt(6)
-r2 = p2.add_run("Risk Decision Request {{ risk_id }} — {{ exec_subject }}")
-r2.font.name = FONT
-r2.font.size = Pt(10)
-r2.font.bold = True
-r2.font.color.rgb = TEAL
+title_banner(doc, "SUPPORTING EVIDENCE", "Risk Action Request {{ risk_id }}: {{ exec_subject }}")
+spacer(doc, 2)
 
 body(
     doc,
-    "Generated from Risk Register entry {{ risk_id }}. This document provides the supporting evidence for "
-    "the one-page Executive Summary Decision Request ({{ request_id }}). It contains the full risk mechanics, "
-    "treatment options, vulnerability detail, and RACI assignments referenced in that summary.",
+    "Generated from Risk Register entry {{ risk_id }}. This document is the supporting evidence for "
+    "the one-page Risk Action Request ({{ request_id }}), which asks the {{ mandating_executives }} to "
+    "mandate a course of action. It contains the full risk mechanics, treatment options, vulnerability "
+    "detail, and RACI assignments behind that request.",
     italic=True, size=8.5, color=GRAY, after=10,
 )
 
 # ── 1. Request Metadata ───────────────────────────────────────────────────
 h1(doc, "1. Request Metadata")
-h2(doc, "1a. Big Ask")
+h2(doc, "1a. The Ask")
 body(doc, "{{ big_ask }}", after=8)
 
 meta_w = [2600, 7768]
@@ -73,8 +60,10 @@ label_value_table(doc, meta_w, [
     ["Request ID", "{{ request_id }}"],
     ["Risk ID", "{{ risk_id }}"],
     ["Date", "{{ request_date }}"],
-    ["Requestor", "{{ requestor_name }}, {{ requestor_role }}"],
-    ["Executive owner requested", "{{ executive_owner_requested }}"],
+    ["Requested by", "{{ requestor_name }}, {{ requestor_role }}"],
+    ["Mandate requested from", "{{ mandating_executives }}"],
+    ["Mandate needed by", "{{ mandate_needed_by }}"],
+    ["Accountable executive", "{{ accountable_executive }}"],
     ["Risk owner", "{{ risk_owner }}"],
     ["Asset / system", "{{ asset_system }}"],
     ["Business process", "{{ business_process }}"],
@@ -85,7 +74,7 @@ spacer(doc, 8)
 
 # ── 2. Source Risk Record ─────────────────────────────────────────────────
 h1(doc, "2. Source Risk Record")
-body(doc, "Pulled from the Risk Register — this request did not exist without a corresponding entry.", italic=True, size=8.5, color=GRAY, after=4)
+body(doc, "Pulled from the Risk Register. Every action request starts from a register entry.", italic=True, size=8.5, color=GRAY, after=4)
 label_value_table(doc, meta_w, [
     ["Risk category", "{{ risk_category }}"],
     ["Asset / system", "{{ asset_system }}"],
@@ -117,8 +106,8 @@ label_value_table(doc, impact_w, [
 doc.add_page_break()
 
 # ── 4. Risk Mechanics ──────────────────────────────────────────────────────
-h1(doc, "4. Risk Mechanics (CISO Assessment)")
-body(doc, "Scores and formulas below are computed by the Risk Register's scoring engine (app/scoring.py).", italic=True, size=8.5, color=GRAY, after=4)
+h1(doc, "4. Risk Mechanics (Security Assessment)")
+body(doc, "Scores below are computed by the Risk Register from the values on the risk record.", italic=True, size=8.5, color=GRAY, after=4)
 mech_w = [2600, 7768]
 label_value_table(doc, mech_w, [
     ["Asset / scope", "{{ asset_system }}"],
@@ -127,13 +116,13 @@ label_value_table(doc, mech_w, [
     ["Attack vector", "{{ attack_vector }}"],
     ["Threat intel source", "{{ threat_intel_source }}"],
     ["Vulnerability", "{{ vulnerability_detail }}"],
-    ["Likelihood", "{{ likelihood_val }} — {{ likelihood_label }}"],
-    ["Business impact", "{{ impact_val }} — {{ impact_label }}"],
+    ["Likelihood", "{{ likelihood_val }} ({{ likelihood_label }})"],
+    ["Business impact", "{{ impact_val }} ({{ impact_label }})"],
     ["Inherent risk", "{{ inherent_score }} (maximum)"],
     ["Existing controls", "{{ existing_controls }}"],
     ["Control type", "{{ control_type }}"],
-    ["Control effectiveness", "{{ control_effectiveness_val }} — {{ control_effectiveness_label }}"],
-    ["Last control test", "{{ last_control_test_date }} — {{ control_test_result }}"],
+    ["Control effectiveness", "{{ control_effectiveness_val }} ({{ control_effectiveness_label }})"],
+    ["Last control test", "{{ last_control_test }}"],
     ["Residual risk (current)", "{{ residual_score }}"],
     ["RAG status", "{{ rag_status }}"],
     ["Exceeds risk appetite?", "{{ exceeds_appetite }}"],
@@ -149,22 +138,24 @@ tag_p(doc, "{%p endif %}")
 opt_w = [1600, 3268, 2500, 2968]
 t_opt = add_table(doc, opt_w, ["Option", "Summary", "Pros", "Trade-offs / risks if chosen"])
 add_data_row(t_opt, opt_w, ["Accept", "{{ opt_accept_summary }}", "{{ opt_accept_pros }}", "{{ opt_accept_tradeoffs }}"])
-add_data_row(t_opt, opt_w, ["Avoid", "{{ opt_avoid_summary }}", "{{ opt_avoid_pros }}", "{{ opt_avoid_tradeoffs }}"], fill=CREAM_FILL)
+add_data_row(t_opt, opt_w, ["Avoid", "{{ opt_avoid_summary }}", "{{ opt_avoid_pros }}", "{{ opt_avoid_tradeoffs }}"], fill=LABEL_FILL)
 add_data_row(t_opt, opt_w, ["Mitigate / Remediate", "{{ opt_mitigate_summary }}", "{{ opt_mitigate_pros }}", "{{ opt_mitigate_tradeoffs }}"])
-add_data_row(t_opt, opt_w, ["Transfer", "{{ opt_transfer_summary }}", "{{ opt_transfer_pros }}", "{{ opt_transfer_tradeoffs }}"], fill=CREAM_FILL)
+add_data_row(t_opt, opt_w, ["Transfer", "{{ opt_transfer_summary }}", "{{ opt_transfer_pros }}", "{{ opt_transfer_tradeoffs }}"], fill=LABEL_FILL)
 
 doc.add_page_break()
 
-# ── 6. Decision Requirements and RACI ─────────────────────────────────────
-h1(doc, "6. Decision Requirements and RACI")
-h2(doc, "Decision Requirements")
+# ── 6. Mandate Requirements and RACI ──────────────────────────────────────
+h1(doc, "6. Mandate Requirements and RACI")
+h2(doc, "What the Mandate Covers")
 dr_w = [3600, 6768]
 label_value_table(doc, dr_w, [
-    ["Select treatment direction", "{{ treatment_direction }} (CISO recommendation, from register)"],
-    ["Set priority level", "{{ priority_level }}"],
-    ["Decision needed by", "{{ decision_needed_by }}"],
-    ["Authorize funding and resources", "{{ funding_requested }}"],
-    ["Risk acceptance sign-off (if Accept)", "{{ acceptance_signoff }}"],
+    ["Recommended treatment to mandate", "{{ suggested_treatment }}"],
+    ["Current treatment on the register", "{{ treatment_direction }}"],
+    ["Priority level", "{{ priority_level }}"],
+    ["Mandate needed by", "{{ mandate_needed_by }}"],
+    ["Accountable executive", "{{ accountable_executive }}"],
+    ["Funding and resources to authorize", "{{ funding_requested }}"],
+    ["Risk acceptance sign-off (if Accept is mandated)", "{{ acceptance_signoff }}"],
 ])
 spacer(doc, 8)
 
@@ -172,9 +163,9 @@ h2(doc, "RACI")
 raci_w = [1600, 3200, 5568]
 t_raci = add_table(doc, raci_w, ["Role", "Named person / group", "Expected contribution"])
 add_data_row(t_raci, raci_w, ["Responsible", "{{ raci_responsible }}", "Executes agreed treatment plan; reports status and evidence."])
-add_data_row(t_raci, raci_w, ["Accountable", "{{ raci_accountable }}", "Owns the outcome and approves implementation and residual risk."], fill=CREAM_FILL)
+add_data_row(t_raci, raci_w, ["Accountable", "{{ raci_accountable }}", "Owns the outcome once the action is mandated; approves implementation and any residual risk."], fill=LABEL_FILL)
 add_data_row(t_raci, raci_w, ["Consulted", "{{ raci_consulted }}", "Provide expert input before and during execution."])
-add_data_row(t_raci, raci_w, ["Informed", "{{ raci_informed }}", "Receive decision, impact, and status updates."], fill=CREAM_FILL)
+add_data_row(t_raci, raci_w, ["Informed", "{{ raci_informed }}", "Receive the mandate, impact, and status updates."], fill=LABEL_FILL)
 spacer(doc, 8)
 
 # ── 7. Action / Evidence Tracker ──────────────────────────────────────────
@@ -182,7 +173,7 @@ h1(doc, "7. Action / Evidence Tracker")
 gd_w = [3800, 2200, 1400, 2968]
 t_gd = add_table(doc, gd_w, ["Action / evidence", "Owner", "Due", "Status"])
 add_data_row(t_gd, gd_w, ["{{ action1_desc }}", "{{ action1_owner }}", "{{ action1_due }}", "{{ action1_status }}"])
-add_data_row(t_gd, gd_w, ["{{ action2_desc }}", "{{ action2_owner }}", "{{ action2_due }}", "{{ action2_status }}"], fill=CREAM_FILL)
+add_data_row(t_gd, gd_w, ["{{ action2_desc }}", "{{ action2_owner }}", "{{ action2_due }}", "{{ action2_status }}"], fill=LABEL_FILL)
 add_data_row(t_gd, gd_w, ["{{ action3_desc }}", "{{ action3_owner }}", "{{ action3_due }}", "{{ action3_status }}"])
 
 doc.add_page_break()
@@ -194,11 +185,11 @@ body(doc, "{{ vuln_summary }}", italic=True, size=8.5, after=6)
 vuln_w = [1900, 1300, 3868, 1600, 1300]
 t_vuln = add_table(doc, vuln_w, ["Vulnerability ID", "CVSS severity", "Remediation", "Vulnerable product", "Days open"])
 # Row-repeat loop: the {%tr for/endfor%} marker rows below must each be a
-# full, standalone <w:tr> containing only that tag — docxtpl strips the
+# full, standalone <w:tr> containing only that tag. docxtpl strips the
 # marker row's own <w:tr> wrapper and leaves bare jinja control flow, so
 # the *data* row between them (a real <w:tr>) is what actually repeats.
-# See scripts/_docx_style.py module docstring / decision_request.py for
-# why this can't be a plain paragraph before/after the table.
+# See the scripts/_docx_style.py module docstring for why this can't be a
+# plain paragraph before or after the table.
 add_data_row(t_vuln, vuln_w, ["{%tr for v in vuln_findings %}", "", "", "", ""])
 add_data_row(t_vuln, vuln_w, ["{{ v.cve_id }}", "{{ v.severity }}", "{{ v.remediation }}", "{{ v.vulnerable_product }}", "{{ v.days_open }}"])
 add_data_row(t_vuln, vuln_w, ["{%tr endfor %}", "", "", "", ""])
@@ -221,9 +212,9 @@ body(
     doc,
     "By signing below, the risk owner named in this register entry ({{ risk_owner }}) confirms the risk "
     "mechanics, existing controls, and residual risk score above accurately reflect the current state of "
-    "this risk. If \"Accept\" is the treatment selected by the Executive Core Team, this signature also "
-    "constitutes formal acceptance of the residual risk described in this document, subject to the "
-    "conditions and review date recorded in the Executive Summary Decision Request.",
+    "this risk. If the CIO and CISO mandate \"Accept,\" this signature also constitutes formal acceptance "
+    "of the residual risk described in this document, subject to the conditions and review date recorded "
+    "on the Risk Action Request.",
     after=14,
 )
 body(doc, "Risk Owner Signature: ____________________________________     Date: ____________", after=6)

@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""Builds the docxtpl SOURCE template for the Executive Summary Decision
-Request — the one-page document that goes to the Executive Core Team.
+"""Builds the docxtpl SOURCE template for the one-page Risk Action Request,
+the document that asks the CIO and CISO to mandate a course of action.
 
 This produces a .docx with {{ jinja }} placeholders (not a filled
-document), styled to match the RDR-CR-010 Executive Summary reference:
-Azo Sans, teal/red/green status colors, cream label-fill tables, a pink
-decision-block header.
+document), in the colors of the organization's document template (PB-000):
+a navy title banner, blue subheadings, gray label fills, and light blue
+headers on the options and mandate blocks. No yellow.
+
+The page follows Background, Issue, Options, Recommendation, after a short
+statement of the ask. The four options are boxes; the executives check the
+one they mandate, and both sign.
 
 Run once to (re)generate app/templates/exports/risk_exec_summary_template.docx:
 
@@ -13,17 +17,17 @@ Run once to (re)generate app/templates/exports/risk_exec_summary_template.docx:
 
 Edit THIS script (not the .docx by hand) when the template needs to
 change, so the Jinja tags never get fragmented across Word runs. Paired
-with scripts/build_supporting_evidence_template.py — both draw their
-context from app/decision_request.py's build_context().
+with scripts/build_supporting_evidence_template.py; both draw their
+context from app/action_request.py's build_context().
 """
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _docx_style import (  # noqa: E402
-    TEAL, RED, GREEN, GRAY, BODY_TXT, PINK_FILL, FONT, PAGE_W_TWIPS,
+    NAVY, BLUE, RED, GRAY, BODY_TXT, BLOCK_FILL, FONT, PAGE_W_TWIPS,
     set_cell_bg, set_cell_borders, set_cell_text,
-    label_value_table, h2, body, body_multi, bullet, tag_p, spacer,
+    label_value_table, title_banner, h2, body, body_multi, bullet, tag_p, spacer,
     add_header_footer, new_letter_doc,
 )
 from docx.shared import Pt, Twips
@@ -35,84 +39,69 @@ doc = new_letter_doc()
 section = doc.sections[0]
 add_header_footer(
     section,
-    "EXECUTIVE SUMMARY DECISION REQUEST  |  {{ risk_id }}",
-    "{{ request_id }}  •  Full risk mechanics, vulnerability evidence, treatment options, and RACI are in the Supporting Evidence document.",
+    "RISK ACTION REQUEST  |  {{ risk_id }}",
+    "{{ request_id }}  •  Full risk mechanics, vulnerability evidence, treatment options, and RACI "
+    "are in the Supporting Evidence document.",
 )
 
 # ── Title block ──────────────────────────────────────────────────────────
-p = doc.add_paragraph()
-p.paragraph_format.space_after = Pt(2)
-r = p.add_run("EXECUTIVE SUMMARY DECISION REQUEST")
-r.font.name = FONT
-r.font.size = Pt(14)
-r.font.bold = True
-r.font.color.rgb = BODY_TXT
+title_banner(doc, "RISK ACTION REQUEST", "{{ risk_id }}: {{ exec_subject }}")
+spacer(doc, 2)
 
-p2 = doc.add_paragraph()
-p2.paragraph_format.space_after = Pt(6)
-r2 = p2.add_run("{{ risk_id }} — {{ exec_subject }}")
-r2.font.name = FONT
-r2.font.size = Pt(10)
-r2.font.bold = True
-r2.font.color.rgb = TEAL
-
+body_multi(doc, [
+    ("To: ", True, BODY_TXT), ("{{ mandating_executives }}     ", False, BODY_TXT),
+    ("From: ", True, BODY_TXT), ("{{ requestor_name }}, {{ requestor_role }}", False, BODY_TXT),
+], after=2, size=8)
 body_multi(doc, [
     ("Request ID: ", True, BODY_TXT), ("{{ request_id }}     ", False, BODY_TXT),
     ("Date: ", True, BODY_TXT), ("{{ request_date }}     ", False, BODY_TXT),
-    ("Requestor: ", True, BODY_TXT), ("{{ requestor_name }}, {{ requestor_role }}", False, BODY_TXT),
+    ("Priority: ", True, BODY_TXT), ("{{ priority_level }}", False, BODY_TXT),
 ], after=2, size=8)
 body_multi(doc, [
-    ("Decision needed by: ", True, RED), ("{{ decision_needed_by }}     ", True, RED),
-    ("Priority: ", True, BODY_TXT), ("{{ priority_level }}", False, BODY_TXT),
+    ("Mandate needed by: ", True, RED), ("{{ mandate_needed_by }}", True, RED),
 ], after=8, size=8)
 
-# ── Executive Ask ────────────────────────────────────────────────────────
-h2(doc, "Executive Ask")
-body(doc, "{{ executive_ask }}", after=4, size=9)
-body_multi(doc, [
-    ("Recommended direction: ", True, BODY_TXT), ("{{ suggested_treatment }}", True, GREEN),
-], after=8, size=9)
+# ── The ask ──────────────────────────────────────────────────────────────
+h2(doc, "The Ask")
+body(doc, "{{ executive_ask }}", after=8, size=9)
 
-# ── Risk at a Glance ─────────────────────────────────────────────────────
-h2(doc, "Risk at a Glance")
+# ── 1. Background ────────────────────────────────────────────────────────
+h2(doc, "1. Background")
+tag_p(doc, "{%p for para in background_paragraphs %}")
+body(doc, "{{ para }}", after=4, size=9)
+tag_p(doc, "{%p endfor %}")
 glance_w = [2400, 2784, 2400, 2784]
 label_value_table(doc, glance_w, [
     ["Asset / System", "{{ asset_system }}", "Risk Owner", "{{ risk_owner }}"],
-    ["Residual Risk", "{{ residual_score }} — {{ rag_status }}", "Inherent Risk", "{{ inherent_score }} (max)"],
-    ["Likelihood", "{{ likelihood_val }} — {{ likelihood_label }}", "Business Impact", "{{ impact_val }} — {{ impact_label }}"],
+    ["Residual Risk", "{{ residual_score }} ({{ rag_status }})", "Inherent Risk", "{{ inherent_score }} (max)"],
+    ["Likelihood", "{{ likelihood_val }} ({{ likelihood_label }})", "Business Impact", "{{ impact_val }} ({{ impact_label }})"],
     ["Exceeds Appetite", "{{ exceeds_appetite }}", "Financial Exposure", "{{ financial_exposure_abbrev }}"],
     ["Vulnerabilities", "{{ vuln_open_count }} open ({{ vuln_high_count }} High)", "Oldest Open", "{{ vuln_oldest_days }} days"],
 ])
 spacer(doc, 4)
 
-# ── Why This Matters ─────────────────────────────────────────────────────
-h2(doc, "Why This Matters")
-tag_p(doc, "{%p for b in why_it_matters_bullets %}")
+# ── 2. Issue ─────────────────────────────────────────────────────────────
+h2(doc, "2. Issue")
+tag_p(doc, "{%p for b in issue_bullets %}")
 bullet(doc, "{{ b }}")
 tag_p(doc, "{%p endfor %}")
-spacer(doc, 3)
+spacer(doc, 1)
 
-# ── Recommended Action ───────────────────────────────────────────────────
-h2(doc, "Recommended Action")
-tag_p(doc, "{%p for a in recommended_action_bullets %}")
-bullet(doc, "{{ a }}")
-tag_p(doc, "{%p endfor %}")
-spacer(doc, 4)
-
-# ── Risk Decision block ──────────────────────────────────────────────────
-dec = doc.add_table(rows=1, cols=1)
-dec.style = "Table Grid"
-dec.autofit = False
-dec.columns[0].width = Twips(PAGE_W_TWIPS)
-c0 = dec.rows[0].cells[0]
+# ── 3. Options ───────────────────────────────────────────────────────────
+h2(doc, "3. Options")
+opts = doc.add_table(rows=1, cols=1)
+opts.style = "Table Grid"
+opts.autofit = False
+opts.columns[0].width = Twips(PAGE_W_TWIPS)
+c0 = opts.rows[0].cells[0]
 c0.width = Twips(PAGE_W_TWIPS)
-set_cell_bg(c0, PINK_FILL)
+set_cell_bg(c0, BLOCK_FILL)
 set_cell_borders(c0)
-set_cell_text(c0, "RISK DECISION — Executive Core Team", bold=True, color=BODY_TXT, size=10)
+set_cell_text(c0, "OPTIONS TO MANDATE: check one", bold=True, color=NAVY, size=10)
 
 
-def decision_row(label_tpl, label_suffix_tpl, text_tpl):
-    row = dec.add_row()
+def option_row(label_tpl, label_suffix_tpl, text_tpl):
+    row = opts.add_row()
     c = row.cells[0]
     set_cell_borders(c)
     c.width = Twips(PAGE_W_TWIPS)
@@ -122,8 +111,8 @@ def decision_row(label_tpl, label_suffix_tpl, text_tpl):
     r1.font.name = FONT
     r1.font.size = Pt(9.5)
     r1.font.bold = True
-    # label_suffix_tpl renders as a docxtpl RichText (green ★ RECOMMENDED or
-    # gray (not viable)) — RichText values require the {{r ...}} tag, not
+    # label_suffix_tpl renders as a docxtpl RichText (blue ★ RECOMMENDED or
+    # gray (not viable)). RichText values require the {{r ...}} tag, not
     # {{ ... }}, or docxtpl silently drops them. The placeholder run's own
     # styling doesn't matter; RichText supplies its own runs on render.
     r2 = p.add_run(label_suffix_tpl)
@@ -137,35 +126,62 @@ def decision_row(label_tpl, label_suffix_tpl, text_tpl):
     return row
 
 
-decision_row("Mitigate / Remediate", "{{r exec_opt_mitigate_label }}", "{{ exec_opt_mitigate_text }}")
-decision_row("Accept", "{{r exec_opt_accept_label }}", "{{ exec_opt_accept_text }}")
-decision_row("Avoid", "{{r exec_opt_avoid_label }}", "{{ exec_opt_avoid_text }}")
-decision_row("Transfer", "{{r exec_opt_transfer_label }}", "{{ exec_opt_transfer_text }}")
+option_row("Mitigate / Remediate", "{{r exec_opt_mitigate_label }}", "{{ exec_opt_mitigate_text }}")
+option_row("Accept", "{{r exec_opt_accept_label }}", "{{ exec_opt_accept_text }}")
+option_row("Avoid", "{{r exec_opt_avoid_label }}", "{{ exec_opt_avoid_text }}")
+option_row("Transfer", "{{r exec_opt_transfer_label }}", "{{ exec_opt_transfer_text }}")
+spacer(doc, 2)
 
-cond_row = dec.add_row()
-cc = cond_row.cells[0]
-set_cell_borders(cc)
-cc.width = Twips(PAGE_W_TWIPS)
-set_cell_text(cc, "Decision conditions / required actions: __________________________________________________", size=9)
+# ── 4. Recommendation ────────────────────────────────────────────────────
+h2(doc, "4. Recommendation")
+body_multi(doc, [
+    ("Recommended: ", True, BODY_TXT), ("{{ suggested_treatment }}", True, BLUE),
+], after=3, size=9)
+tag_p(doc, "{%p for a in recommended_action_bullets %}")
+bullet(doc, "{{ a }}")
+tag_p(doc, "{%p endfor %}")
+rec_w = [3000, 7368]
+label_value_table(doc, rec_w, [
+    ["Accountable executive", "{{ accountable_executive }}"],
+    ["Responsible for delivery", "{{ raci_responsible }}"],
+    ["Funding and resources", "{{ funding_requested }}"],
+])
+spacer(doc, 4)
 
-exec_row = dec.add_row()
-ec = exec_row.cells[0]
-set_cell_borders(ec)
-ec.width = Twips(PAGE_W_TWIPS)
-set_cell_text(ec, "Accountable executive: ____________________________     Review date: ________________", size=9)
+# ── Mandate ──────────────────────────────────────────────────────────────
+mand = doc.add_table(rows=1, cols=1)
+mand.style = "Table Grid"
+mand.autofit = False
+mand.columns[0].width = Twips(PAGE_W_TWIPS)
+m0 = mand.rows[0].cells[0]
+m0.width = Twips(PAGE_W_TWIPS)
+set_cell_bg(m0, BLOCK_FILL)
+set_cell_borders(m0)
+set_cell_text(m0, "MANDATE: CIO and CISO", bold=True, color=NAVY, size=10)
 
-spacer(doc, 6)
 
-# ── Signatures ────────────────────────────────────────────────────────────
-body(doc, "Executive approver signature: ____________________________________     Date: ____________", after=6, size=9)
-body(doc, "Risk owner acknowledgement ({{ risk_owner }}): ____________________________________     Date: ____________", after=6, size=9)
+def mandate_row(text, size=9):
+    row = mand.add_row()
+    c = row.cells[0]
+    set_cell_borders(c)
+    c.width = Twips(PAGE_W_TWIPS)
+    set_cell_text(c, text, size=size)
 
-body(
-    doc,
-    "Full risk mechanics, vulnerability evidence, treatment options, and RACI are in the Supporting "
-    "Evidence document ({{ request_id }} Supporting Evidence).",
-    italic=True, size=7.5, color=GRAY, after=0,
-)
+
+mandate_row("Conditions or changes to the mandated option: "
+            "_____________________________________________")
+mandate_row("Accountable executive: ____________________   "
+            "Complete by: ____________   Review date: ____________")
+mandate_row("CIO signature: ____________________________________     Date: ______________")
+mandate_row("CISO signature: ___________________________________     Date: ______________")
+
+body(doc, "The mandate stands when both the CIO and the CISO have signed.",
+     italic=True, size=8, color=GRAY, after=4)
+
+body(doc, "Risk owner acknowledgement ({{ risk_owner }}): "
+          "____________________________     Date: ____________", after=0, size=9)
+# The page footer already points to the Supporting Evidence document, so the
+# page ends here; repeating it in the body pushed the request onto page two.
 
 doc.save(OUTPUT_PATH)
 print(f"template written to {OUTPUT_PATH}")

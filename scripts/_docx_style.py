@@ -1,11 +1,12 @@
-"""Shared docx-building helpers and palette for the Decision Request export
-templates (Executive Summary + Supporting Evidence).
+"""Shared docx-building helpers and palette for the Risk Action Request
+export templates (the one-page request and its Supporting Evidence).
 
-Palette and type match "RDR-CR-010 Executive Summary / Supporting Evidence"
-— the reference documents this pair of templates was built from: Azo Sans,
-a teal/red/green status system, and a cream/pink table-fill scheme. If the
-org's brand system changes, this is the one file to update — both builder
-scripts import their colors and helpers from here.
+Colors match the organization's document template (PB-000): a navy title
+banner, navy section bars and table headers, blue subheadings and rules,
+light gray label and row fills, gray borders, and red for the one date that
+must not be missed. The template's yellow (title subtitle and callout boxes)
+is deliberately not used. If the brand system changes, this is the one file
+to update; both builder scripts import their colors and helpers from here.
 """
 import docx
 from docx.shared import Pt, Twips, RGBColor
@@ -14,21 +15,27 @@ from docx.enum.table import WD_ALIGN_VERTICAL
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
-# ── Palette (matches the RDR-CR-010 reference docs) ─────────────────────
-TEAL = RGBColor(0x01, 0x69, 0x6F)
-RED = RGBColor(0xEE, 0x00, 0x00)
-GREEN = RGBColor(0x00, 0xB0, 0x50)
-GRAY = RGBColor(0x7A, 0x79, 0x74)
-BODY_TXT = RGBColor(0x1F, 0x1F, 0x1F)
+# ── Palette (PB-000 template; no yellow) ────────────────────────────────
+NAVY_HEX = "1F3864"       # section bars, table headers, header text
+BANNER_HEX = "002060"     # title banner
+BLUE_HEX = "2E75B6"       # subheadings, bullet markers, the recommendation
+RULE_HEX = "2E5496"       # header and footer rules
+RED_HEX = "C00000"        # the mandate-needed-by date
+GRAY_HEX = "404040"       # footer, notes, "not viable"
+
+NAVY = RGBColor.from_string(NAVY_HEX)
+BLUE = RGBColor.from_string(BLUE_HEX)
+RED = RGBColor.from_string(RED_HEX)
+GRAY = RGBColor.from_string(GRAY_HEX)
+BODY_TXT = RGBColor(0x00, 0x00, 0x00)
 WHITE = RGBColor(0xFF, 0xFF, 0xFF)
 
-CREAM_FILL = "F9F8F5"    # label-cell fill on data tables
-PINK_FILL = "FBE9F0"     # decision-block header fill
-GRID_BORDER = "D9D6D2"
+LABEL_FILL = "F2F2F2"     # label cells and alternate rows
+BLOCK_FILL = "BDD7EE"     # header row of the options and mandate blocks
+GRID_BORDER = "CCCCCC"
 
-FONT = "Azo Sans"        # falls back to a substitute font if not installed
-                          # on the machine opening the document — see the
-                          # decision-request docs for how to get the font.
+FONT = "Azo Sans"        # Word substitutes a similar font if Azo Sans is
+                          # not installed on the machine opening the file.
 
 PAGE_W_TWIPS = 10368  # Letter, 0.5in margins
 
@@ -82,7 +89,7 @@ def set_cell_text(cell, text, bold=False, color=BODY_TXT, size=9, italic=False, 
     return run
 
 
-def add_table(doc, widths, header_labels=None, header_fill="1B365D", header_color=WHITE):
+def add_table(doc, widths, header_labels=None, header_fill=NAVY_HEX, header_color=WHITE):
     cols = len(widths)
     rows = 1 if header_labels else 0
     table = doc.add_table(rows=rows, cols=cols)
@@ -104,15 +111,15 @@ def add_data_row(table, widths, values, fill=None, italic=False, bold_first=True
         set_cell_borders(c)
         if fill:
             set_cell_bg(c, fill)
-        set_cell_text(c, val, italic=italic, size=9, bold=(bold_first and i == 0 and fill == CREAM_FILL))
+        set_cell_text(c, val, italic=italic, size=9, bold=(bold_first and i == 0 and fill == LABEL_FILL))
     set_col_widths(table, widths)
     return row
 
 
-def label_value_table(doc, widths, rows, label_fill=CREAM_FILL):
+def label_value_table(doc, widths, rows, label_fill=LABEL_FILL):
     """A 2-or-4 column table where every even column is a label cell
-    (cream fill, bold) and every odd column is its value — the pattern
-    used throughout both reference documents for metadata tables."""
+    (gray fill, bold) and every odd column is its value: the pattern used
+    for metadata tables throughout both documents."""
     table = doc.add_table(rows=0, cols=len(widths))
     table.style = "Table Grid"
     for row_vals in rows:
@@ -128,19 +135,74 @@ def label_value_table(doc, widths, rows, label_fill=CREAM_FILL):
     return table
 
 
-def h1(doc, text, color=TEAL, size=13):
+def _shade_paragraph(p, hex_fill):
+    pPr = p._p.get_or_add_pPr()
+    shd = OxmlElement("w:shd")
+    shd.set(qn("w:val"), "clear")
+    shd.set(qn("w:color"), "auto")
+    shd.set(qn("w:fill"), hex_fill)
+    pPr.append(shd)
+
+
+def _rule(p, edge, hex_color=RULE_HEX, sz=6):
+    """A single line above or below a paragraph: the template's header and
+    footer rules."""
+    pPr = p._p.get_or_add_pPr()
+    bdr = OxmlElement("w:pBdr")
+    el = OxmlElement(f"w:{edge}")
+    el.set(qn("w:val"), "single")
+    el.set(qn("w:sz"), str(sz))
+    el.set(qn("w:space"), "4")
+    el.set(qn("w:color"), hex_color)
+    bdr.append(el)
+    pPr.append(bdr)
+
+
+def h1(doc, text, size=12):
+    """Section heading: white text on a full-width navy bar, as in the template."""
     p = doc.add_paragraph()
     p.paragraph_format.space_before = Pt(10)
     p.paragraph_format.space_after = Pt(5)
-    r = p.add_run(text)
+    _shade_paragraph(p, NAVY_HEX)
+    r = p.add_run(" " + text)
     r.font.name = FONT
     r.font.size = Pt(size)
     r.font.bold = True
-    r.font.color.rgb = color
+    r.font.color.rgb = WHITE
     return p
 
 
-def h2(doc, text, color=TEAL, size=10.5):
+def title_banner(doc, title, subtitle):
+    """The template's title block: a full-width navy banner, title above a
+    subtitle. The template sets the subtitle in yellow; this uses white."""
+    t = doc.add_table(rows=1, cols=1)
+    t.autofit = False
+    t.columns[0].width = Twips(PAGE_W_TWIPS)
+    c = t.rows[0].cells[0]
+    c.width = Twips(PAGE_W_TWIPS)
+    set_cell_bg(c, BANNER_HEX)
+    set_cell_borders(c, color=BANNER_HEX)
+    p = c.paragraphs[0]
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_before = Pt(4)
+    p.paragraph_format.space_after = Pt(1)
+    r = p.add_run(title)
+    r.font.name = FONT
+    r.font.size = Pt(13)
+    r.font.bold = True
+    r.font.color.rgb = WHITE
+    p2 = c.add_paragraph()
+    p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p2.paragraph_format.space_after = Pt(4)
+    r2 = p2.add_run(subtitle)
+    r2.font.name = FONT
+    r2.font.size = Pt(10.5)
+    r2.font.bold = True
+    r2.font.color.rgb = WHITE
+    return t
+
+
+def h2(doc, text, color=BLUE, size=10.5):
     p = doc.add_paragraph()
     p.paragraph_format.space_before = Pt(6)
     p.paragraph_format.space_after = Pt(2)
@@ -179,9 +241,9 @@ def body_multi(doc, runs, after=6, size=9):
     return p
 
 
-def bullet(doc, text, after=3, size=9, marker_color=TEAL):
-    """One bullet, teal marker — used with {%p for/endfor%} tags around it
-    so docxtpl repeats this paragraph once per list item."""
+def bullet(doc, text, after=3, size=9, marker_color=BLUE):
+    """One bullet with a blue marker, used with {%p for/endfor%} tags around
+    it so docxtpl repeats this paragraph once per list item."""
     p = doc.add_paragraph()
     p.paragraph_format.space_after = Pt(after)
     p.paragraph_format.left_indent = Twips(200)
@@ -216,20 +278,25 @@ def spacer(doc, after=4):
 
 
 def add_header_footer(section, header_text, footer_text):
+    """Template header and footer: navy bold header text over a blue rule,
+    gray footer text under one."""
     header = section.header
     hp = header.paragraphs[0]
-    hp.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    hp.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    _rule(hp, "bottom")
     hr = hp.add_run(header_text)
     hr.font.name = FONT
     hr.font.size = Pt(8)
-    hr.font.color.rgb = GRAY
+    hr.font.bold = True
+    hr.font.color.rgb = NAVY
 
     footer = section.footer
     fp = footer.paragraphs[0]
-    fp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    fp.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    _rule(fp, "top")
     fr = fp.add_run(footer_text)
     fr.font.name = FONT
-    fr.font.size = Pt(8)
+    fr.font.size = Pt(7.5)
     fr.font.color.rgb = GRAY
 
 

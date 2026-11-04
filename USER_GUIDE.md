@@ -219,7 +219,7 @@ Downloads the full risk register as a formatted `.xlsx` workbook. Two sheets are
 
 The Excel export is appropriate for offline analysis, sharing with stakeholders who do not have system access, or building custom charts and pivot tables on top of the data.
 
-For a single-risk document suitable for routing to leadership and signature, see [Generating a Decision / Acceptance Form](#generating-a-decision--acceptance-form) in Section 14.
+For a single-risk document that asks the CIO and CISO to mandate a course of action, see [Generating a Risk Action Request](#generating-a-risk-action-request) in Section 15.
 
 ---
 
@@ -419,7 +419,7 @@ The trend chart on the detail view plots these entries over time.
 
 ## 12. Tracking Vulnerability Findings
 
-Vulnerability findings are individual scanner results — typically one CVE apiece — tied to a risk. This is deliberately narrow: it exists to give the Decision / Acceptance Form (§15) real numbers to report instead of typed-in ones, not to replace a vulnerability management platform. There's no rescan workflow beyond marking a finding Remediated.
+Vulnerability findings are individual scanner results — typically one CVE apiece — tied to a risk. This is deliberately narrow: it exists to give the Risk Action Request (§15) real numbers to report instead of typed-in ones, not to replace a vulnerability management platform. There's no rescan workflow beyond marking a finding Remediated.
 
 ### Adding a Finding
 
@@ -440,7 +440,7 @@ Click the trash icon on any row. Do this when a finding was entered in error —
 
 ### Where This Shows Up
 
-The open/High counts and oldest-open figure feed the Executive Summary's Risk at a Glance table; the full list, with remediation and days open per finding, feeds the Supporting Evidence document's Vulnerability Evidence table (§15). Keep this list current before generating a Decision / Acceptance Form — that's the whole reason it's here.
+The open/High counts and oldest-open figure feed the Risk at a Glance table on the one-page Risk Action Request; the full list, with remediation and days open per finding, feeds the Supporting Evidence document's Vulnerability Evidence table (§15). Keep this list current before generating an action request. That's the whole reason it's here.
 
 ---
 
@@ -529,18 +529,28 @@ These fields create an accountable record. If a risk that was formally accepted 
 
 Do not mark a risk as Accepted because no one got around to treating it. Accept it when someone has reviewed it and made a conscious decision to carry the exposure.
 
-### Generating a Decision / Acceptance Form
+### Generating a Risk Action Request
 
-Operators and admins can generate a routable decision packet for any risk from the **Decision / Acceptance Form** button on the risk detail page. It downloads as a `.zip` containing two documents, built to escalate a risk to leadership for a treatment decision and to carry a signature — the risk owner's, and the Executive Core Team's if the treatment is Accept:
+A Risk Action Request asks the CIO and CISO to mandate a course of action on one risk. The analysis is already done; the request lays out the options, marks the one we recommend, and gives both executives a place to sign the mandate.
 
-- **Executive Summary Decision Request** — one page. A Risk at a Glance table, Why This Matters and Recommended Action bullets, a four-option decision block (Mitigate / Accept / Avoid / Transfer) with checkboxes, and two signature lines. This is what goes in front of the Executive Core Team.
-- **Supporting Evidence** — the full record behind that ask: risk narrative, business impact, risk mechanics, the vulnerability evidence table, treatment options with pros/trade-offs, RACI, and the risk owner sign-off block.
+Operators and admins generate one from the **Action Request** button on the risk detail page. It downloads as a `.zip` containing two Word documents:
 
-Everything the register already knows about the risk — scores, controls, treatment, owner, financial exposure, NIST CSF mapping, and vulnerability findings (see §11a) — is pulled in automatically; nothing here is retyped. A form asks for the handful of things that belong to that specific decision rather than to the risk record itself: who the request is routed to, the priority, the RACI, a one-sentence "ask" for the Evidence document and a fuller Executive Ask paragraph for the Summary (both drafted for you, editable before you generate), the Why This Matters / Recommended Action bullets, and a risk narrative.
+- **Risk Action Request**, one page. It opens with the ask: what we are asking them to mandate, by when, and what happens if they do not. Then it follows Background, Issue, Options, Recommendation:
+  1. **Background:** your background paragraph and a Risk at a Glance table.
+  2. **Issue:** why this needs action now, as bullets.
+  3. **Options:** four boxes (Mitigate, Accept, Avoid, Transfer), each worded as a mandate. The recommended one is marked ★ RECOMMENDED; any you mark not viable say why.
+  4. **Recommendation:** the recommended option and steps, the accountable executive, who is responsible for delivery, and the funding and resources to authorize.
 
-If the register's stored Treatment differs from what you're actually recommending, set **Suggested treatment direction** on the form — both documents will show the register's value as the current state and your suggestion as the recommended action, rather than silently picking one. If Avoid or Transfer genuinely aren't options for this risk (a system that has to keep running, for instance), fill in why — that reason becomes the "not viable" language on both documents instead of a live checkbox.
+  Under that is the mandate block: a line for conditions or changes, the accountable executive, complete-by and review dates, and signature lines for the **CIO** and the **CISO**. The mandate stands when both have signed. The risk owner acknowledges it on the line below.
+- **Supporting Evidence**, the full record behind the request: risk narrative, business impact, risk mechanics, the vulnerability evidence table, treatment options with pros and trade-offs, what the mandate covers, RACI, and the risk owner sign-off.
 
-Generating the form does not change the risk record or its status — it produces documents. If the Executive Core Team decides to accept the risk, come back and set Treatment to Accept and fill in the Acceptance Sign-Off fields above so the register and the signed documents agree.
+Everything the register already knows about the risk (scores, controls, treatment, owner, financial exposure, NIST CSF mapping, and vulnerability findings, see §11a) is pulled in automatically; nothing is retyped. The form asks only for what belongs to this request: who it goes to (the CIO and CISO by default), the accountable executive, the date the mandate is needed by, priority, the ask in one paragraph and in one sentence (both drafted for you), background, the issue, the recommended steps, RACI, and a risk narrative. The form follows the same Background, Issue, Options, Recommendation order as the one-page request.
+
+If the register's stored Treatment differs from what you are recommending, set **Recommended option** on the form. Both documents then show the register's value as the current treatment, not recommended, and your choice as the recommendation, rather than silently picking one. If Avoid or Transfer genuinely aren't options for this risk (a system that has to keep running, for instance), fill in why; that reason replaces the live checkbox with "not viable" on both documents.
+
+Generating the request does not change the risk record or its status; it produces documents and adds one audit entry. Once the CIO and CISO have signed, come back and record what they mandated. If they mandated Accept, set Treatment to Accept and fill in the Acceptance Sign-Off fields above, so the register and the signed documents agree.
+
+The old address, `/risks/<id>/decision-request`, redirects to the new one, so existing bookmarks still work.
 
 ### Deleting a Risk
 
@@ -582,7 +592,7 @@ After a successful import, the application reconnects to the new database withou
 |---|:---:|:---:|:---:|
 | View all risks and reports | ✓ | ✓ | ✓ |
 | Download Excel export | ✓ | ✓ | ✓ |
-| Generate Decision / Acceptance Form | — | ✓ | ✓ |
+| Generate Risk Action Request | — | ✓ | ✓ |
 | Create new risks | — | ✓ | ✓ |
 | Edit risks they created or own | — | ✓ | ✓ |
 | Add trend log entries | — | ✓ | ✓ |
