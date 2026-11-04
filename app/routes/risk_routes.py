@@ -129,7 +129,10 @@ def list_risks():
     q = request.args.get("q", "").strip()
     rag_filter = request.args.get("rag", "")
     cat_filter = request.args.get("category", "")
-    status_filter = request.args.get("status", "")
+    # Several statuses can be ticked at once; none ticked means all. Values
+    # outside STATUSES are dropped rather than trusted.
+    status_filters = [s for s in request.args.getlist("status") if s in STATUSES]
+    hide_closed = request.args.get("hide_closed", "") in ("1", "on", "true", "yes")
     owner_filter = request.args.get("owner", "").strip()
     appetite_filter = request.args.get("appetite", "")
 
@@ -146,8 +149,11 @@ def list_risks():
         )
     if cat_filter:
         query = query.filter(Risk.risk_category == cat_filter)
-    if status_filter:
-        query = query.filter(Risk.status == status_filter)
+    if status_filters:
+        query = query.filter(Risk.status.in_(status_filters))
+    if hide_closed:
+        # A risk with no status set is not closed, so it stays visible.
+        query = query.filter(or_(Risk.status != "Closed", Risk.status.is_(None)))
     if owner_filter:
         query = query.filter(Risk.risk_owner.ilike(f"%{owner_filter}%"))
 
@@ -173,7 +179,8 @@ def list_risks():
         q=q,
         rag_filter=rag_filter,
         cat_filter=cat_filter,
-        status_filter=status_filter,
+        status_filters=status_filters,
+        hide_closed=hide_closed,
         owner_filter=owner_filter,
         appetite_filter=appetite_filter,
     )

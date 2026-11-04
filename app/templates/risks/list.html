@@ -18,11 +18,12 @@
     <form id="filter-form"
           hx-get="{{ url_for('risks.list_risks') }}"
           hx-target="#risk-table-wrapper"
-          hx-trigger="change from:select, input from:[name=q] delay:400ms"
+          hx-trigger="change, input from:[name=q] delay:400ms"
+          hx-push-url="true"
           hx-indicator="#spinner"
           class="row g-2 align-items-end">
 
-      <div class="col-md-3">
+      <div class="col-md-2">
         <label class="form-label small mb-1">Search</label>
         <input type="text" name="q" class="form-control form-control-sm"
                placeholder="Risk ID, threat, asset, owner…" value="{{ q }}">
@@ -47,12 +48,24 @@
       </div>
       <div class="col-md-2">
         <label class="form-label small mb-1">Status</label>
-        <select name="status" class="form-select form-select-sm">
-          <option value="">All</option>
-          {% for s in statuses %}
-          <option value="{{ s }}" {{ "selected" if status_filter == s }}>{{ s }}</option>
-          {% endfor %}
-        </select>
+        <div class="dropdown">
+          <button type="button" id="status-toggle"
+                  class="form-select form-select-sm text-start"
+                  data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
+            {{ status_filters|join(", ") if status_filters else "All" }}
+          </button>
+          <div class="dropdown-menu p-2 small" style="min-width: 100%">
+            {% for s in statuses %}
+            <div class="form-check">
+              <input class="form-check-input status-check" type="checkbox" name="status"
+                     value="{{ s }}" id="status-{{ loop.index }}"
+                     {{ "checked" if s in status_filters }}>
+              <label class="form-check-label" for="status-{{ loop.index }}">{{ s }}</label>
+            </div>
+            {% endfor %}
+            <div class="border-top mt-2 pt-1 text-muted">None ticked shows all.</div>
+          </div>
+        </div>
       </div>
       <div class="col-md-2">
         <label class="form-label small mb-1">Exceeds Appetite</label>
@@ -62,8 +75,13 @@
           <option value="no" {{ "selected" if appetite_filter == "no" }}>No</option>
         </select>
       </div>
-      <div class="col-md-1 d-flex align-items-end">
-        <span id="spinner" class="htmx-indicator spinner-border spinner-border-sm text-primary"></span>
+      <div class="col-md-2 d-flex align-items-end">
+        <div class="form-check form-switch small mb-1">
+          <input class="form-check-input" type="checkbox" role="switch" name="hide_closed"
+                 value="1" id="hide-closed" {{ "checked" if hide_closed }}>
+          <label class="form-check-label text-nowrap" for="hide-closed">Hide closed</label>
+        </div>
+        <span id="spinner" class="htmx-indicator spinner-border spinner-border-sm text-primary ms-2"></span>
       </div>
     </form>
   </div>
@@ -73,4 +91,28 @@
 <div id="risk-table-wrapper">
   {% include "partials/risk_table.html" %}
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Keep the Status button's label in step with the ticked boxes.
+  (function () {
+    var toggle = document.getElementById('status-toggle');
+    var hide = document.getElementById('hide-closed');
+    function label() {
+      var picked = Array.prototype.filter.call(
+        document.querySelectorAll('.status-check'), function (cb) { return cb.checked; }
+      ).map(function (cb) { return cb.value; });
+      toggle.textContent = picked.length ? picked.join(', ') : 'All';
+      // Ticking Closed while Hide closed is on would show nothing; say so.
+      var closed = document.querySelector('.status-check[value="Closed"]');
+      if (closed) { closed.parentElement.title = hide.checked ? 'Hidden while "Hide closed" is on' : ''; }
+    }
+    document.querySelectorAll('.status-check').forEach(function (cb) {
+      cb.addEventListener('change', label);
+    });
+    hide.addEventListener('change', label);
+    label();
+  })();
+</script>
 {% endblock %}
