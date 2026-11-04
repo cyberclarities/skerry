@@ -137,8 +137,10 @@ def create_app(config_class=Config):
     # Template globals
     @app.context_processor
     def inject_globals():
+        from .version import __version__
         return {
             "oidc_enabled": bool(app.config.get("OIDC_CLIENT_ID")),
+            "app_version": __version__,
         }
 
     logging.basicConfig(level=logging.INFO)

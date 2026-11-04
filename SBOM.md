@@ -31,7 +31,7 @@
 | Field | Value |
 |---|---|
 | **PackageName** | skerry |
-| **PackageVersion** | 4.0 |
+| **PackageVersion** | 1.4 |
 | **PackageSupplier** | Organization: CyberClarities |
 | **PackageHomePage** | internal |
 | **PackageLicenseDeclared** | MIT |
@@ -336,6 +336,7 @@ and are invisible to container image scanners. Track them separately.
 | 2026-10-16 | Security fixes from the pre-push review. Bumped Flask 3.1.0 → 3.1.3, Werkzeug 3.1.3 → 3.1.9, Authlib 1.3.2 → 1.6.12, requests 2.32.3 → 2.33.0, python-dotenv 1.0.1 → 1.2.2; `pip-audit` reports no known vulnerabilities in the direct dependencies. Added su-exec. Added subresource integrity to the CDN assets and moved htmx from unpkg to jsDelivr. Added the Spotlight components to the component list. Section 4 was **not** regenerated in this update; its transitive versions are still the 2026-08-11 resolution and may differ from what the bumped packages pull in. |
 | 2026-11-03 | Security fixes from the 2026-11-03 review. Bumped Authlib 1.6.12 → 1.9.1 and pinned dnspython 2.9.0, which clears CVE-2026-114605; `pip-audit` reports no known vulnerabilities. dnspython 2.9 requires Python 3.11 or newer; the container runs 3.12. Section 4 was updated for these two packages only. |
 | 2026-11-04 | The per-risk export was renamed from Decision / Acceptance Form to Risk Action Request; `app/decision_request.py` became `app/action_request.py`. No dependency change. |
+| 2026-11-04 | Application version set to 1.4, now shown in the app and kept in `app/version.py`. This replaces the 4.0 recorded here on 2026-08-11; the numbering restarts by the owner's decision, and `CHANGELOG.md` records each release from 1.4 on. |
 
 ---
 

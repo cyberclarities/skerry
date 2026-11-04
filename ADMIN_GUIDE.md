@@ -629,6 +629,10 @@ The database schema is managed by SQLAlchemy's `db.create_all()` on startup. It 
 
 The container starts as root only long enough to give `./data` to the app user (uid 10001), then runs Gunicorn as that user. No manual ownership change is needed on upgrade; see `docker-entrypoint.sh`.
 
+After the rebuild, sign in and check the version under the logo in the sidebar. It should match the newest entry in `CHANGELOG.md`; if it shows the old number, the rebuild did not take. Each `CHANGELOG.md` entry ends with any upgrade steps that release needs.
+
+**Releasing a new version.** Change `__version__` in `app/version.py`, add an entry at the top of `CHANGELOG.md`, and update `PackageVersion` in `SBOM.md` and the Version line in `USER_GUIDE.md`. The test suite fails until all four agree.
+
 ### 10.2 Checking Container Status
 
 ```bash

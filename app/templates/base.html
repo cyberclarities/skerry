@@ -56,6 +56,12 @@
       font-size: 1rem;
       line-height: 1.2;
     }
+    #sidebar .brand .version {
+      color: rgba(255,255,255,.45);
+      font-size: .7rem;
+      letter-spacing: .03em;
+      margin-top: 1px;
+    }
     #sidebar nav { padding: .5rem 0; flex: 1; }
     #sidebar nav .nav-section {
       padding: .6rem 1rem .2rem;
@@ -155,6 +161,7 @@
     <div>
       <h6>Cybersecurity</h6>
       <div class="title">Skerry</div>
+      <div class="version" id="app-version">Version {{ app_version }}</div>
     </div>
   </div>
   <nav>

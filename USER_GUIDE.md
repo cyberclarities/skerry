@@ -1,6 +1,6 @@
 # Skerry — User Guide
 
-**Version:** 1.0  
+**Version:** 1.4  
 **Platform:** Skerry — `skerry.example.com`  
 **Audience:** Everyone with an account — Viewer, Operator, and Admin
 
