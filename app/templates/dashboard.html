@@ -58,9 +58,10 @@
                 {% if score >= rag_red %}{% set zone = "RED" %}
                 {% elif score >= rag_amber %}{% set zone = "AMBER" %}
                 {% else %}{% set zone = "GREEN" %}{% endif %}
+                {% set total = cell.values()|sum %}
               <div class="heat-cell heat-zone-{{ zone }}"
-                   title="Likelihood {{ likelihood }} x Impact {{ impact }} = {{ score }} ({{ zone }} zone){% for rag in ['RED','AMBER','GREEN','UNKNOWN'] %}{% if cell.get(rag) %}; {{ cell[rag] }} rated {{ rag }}{% endif %}{% endfor %}">
-                {% for rag in ['RED','AMBER','GREEN','UNKNOWN'] %}{% if cell.get(rag) %}<span class="heat-chip heat-chip-{{ rag }}">{{ cell[rag] }}</span>{% endif %}{% endfor %}
+                   title="Likelihood {{ likelihood }} x Impact {{ impact }} = {{ score }} ({{ zone }} zone){% if total %}: {{ total }} open risk{{ 's' if total != 1 }}{% for rag in ['RED','AMBER','GREEN','UNKNOWN'] %}{% if cell.get(rag) %}; {{ cell[rag] }} rated {{ rag }}{% endif %}{% endfor %} after controls{% endif %}">
+                {% if total %}<span class="heat-count">{{ total }}</span>{% endif %}
               </div>
               {% endfor %}
             </div>
@@ -81,10 +82,8 @@
           <span class="heat-key heat-zone-GREEN ms-2"></span> under {{ rag_amber }}.
         </div>
         <div class="small text-muted mt-1">
-          Numbers are open risks in that cell (closed risks are not shown), colored by their current rating after controls:
-          <span class="heat-chip heat-chip-RED">n</span>
-          <span class="heat-chip heat-chip-AMBER">n</span>
-          <span class="heat-chip heat-chip-GREEN">n</span>
+          The number in each cell is the total of open risks at that likelihood and impact.
+          Closed risks are not counted. Hover over a cell to see how its risks are rated after controls.
         </div>
         {% if heat_unplotted %}
         <div class="small text-muted mt-1">

@@ -21,10 +21,10 @@ def index():
     board_flags = [r for r in risks if r.board_reporting_flag]
 
     # Heat map. Each risk sits in the cell for its likelihood x impact (the
-    # inherent position), but is counted under its current RAG label, which
-    # comes from the residual score after controls. A well-controlled risk
-    # therefore shows as a green count inside a red cell, rather than as an
-    # unexplained red count. Risks missing likelihood or impact cannot be
+    # inherent position). The cell shows one total. The split by current RAG
+    # label, which comes from the residual score after controls, is kept per
+    # cell for the hover text, so a well-controlled risk in a red cell can
+    # still be seen as green. Risks missing likelihood or impact cannot be
     # placed; they are counted so the matrix total adds up. Closed risks are
     # left off entirely: the map shows exposure we still carry. Accepted risks
     # stay, because accepting a risk does not make it go away.

@@ -502,12 +502,12 @@ def test_1_1_deleted_risk_does_not_leave_spotlight_links_dangling(app):
 
 # ── Dashboard heat map ──────────────────────────────────────────────────────
 def test_heat_map_shows_every_risk_under_its_current_label(app):
-    """Green-labeled risks must be visible as green, wherever they sit.
+    """Each cell shows one total; its hover text splits that total by label.
 
     A risk's label comes from its residual score (after controls); its cell
     comes from likelihood x impact (before controls). A controlled risk sits
-    in a red cell but must still be counted as green, and the green zone must
-    be drawn even when empty.
+    in a red cell but must still be visible as green, now in the hover text,
+    and the green zone must be drawn even when empty.
     """
     from app.models import Risk, db
     with app.app_context():
@@ -526,13 +526,17 @@ def test_heat_map_shows_every_risk_under_its_current_label(app):
     assert len(cells) == 25
     assert sum(1 for z, _t, _i in cells if z == "GREEN") == 14, "green zone drawn even when empty"
 
-    def chips(lik, imp):
-        inner = next(i for _z, t, i in cells if t.startswith(f"Likelihood {lik} x Impact {imp} "))
-        return dict((rag, int(n)) for rag, n in re.findall(r'heat-chip-(\w+)">(\d+)<', inner))
+    def cell(lik, imp):
+        title, inner = next((t, i) for _z, t, i in cells
+                            if t.startswith(f"Likelihood {lik} x Impact {imp} "))
+        total = re.findall(r'heat-count">(\d+)<', inner)
+        split = dict((rag, int(n)) for n, rag in re.findall(r"(\d+) rated (\w+)", title))
+        return (int(total[0]) if total else 0), split
 
-    assert chips(2, 2) == {"GREEN": 1}
-    assert chips(4, 4) == {"GREEN": 1}, "controlled risk shows green inside the red zone"
-    assert chips(5, 5) == {"RED": 1}
+    assert cell(2, 2) == (1, {"GREEN": 1})
+    assert cell(4, 4) == (1, {"GREEN": 1}), "controlled risk shows green inside the red zone"
+    assert cell(5, 5) == (1, {"RED": 1})
+    assert cell(1, 1) == (0, {}), "an empty cell shows no number"
     assert "1 risk not shown: likelihood or impact not set." in html
 
 
@@ -550,7 +554,7 @@ def test_heat_map_leaves_out_closed_risks(app):
     _login(c)
     html = c.get("/dashboard").get_data(as_text=True)
     cell = re.search(r'title="Likelihood 5 x Impact 5 [^"]*">\s*(.*?)\s*</div>', html, re.S).group(1)
-    assert re.findall(r'heat-chip-(\w+)">(\d+)<', cell) == [("RED", "2")], \
+    assert re.findall(r'heat-count">(\d+)<', cell) == ["2"], \
         "open and accepted count; closed does not"
     assert "not shown: likelihood or impact not set" not in html, \
         "a closed risk with no likelihood is not reported as missing"
@@ -589,3 +593,25 @@ def test_real_authlib_builds_the_authorize_redirect():
     assert loc.startswith("https://login.example.com/authorize?")
     for part in ("client_id=cid", "response_type=code", "scope=openid+email+profile", "state=", "nonce="):
         assert part in loc, part
+
+
+def test_heat_map_cell_shows_one_cumulative_count(app):
+    """Risks in one cell under different labels add up to a single number."""
+    from app.models import Risk, db
+    with app.app_context():
+        db.session.add_all([
+            Risk(risk_id="SKR-001", likelihood=4, impact=4),                           # RED
+            Risk(risk_id="SKR-002", likelihood=4, impact=4),                           # RED
+            Risk(risk_id="SKR-003", likelihood=4, impact=4, control_effectiveness=3),  # lower
+            Risk(risk_id="SKR-004", likelihood=4, impact=4, control_effectiveness=5),  # GREEN
+        ])
+        db.session.commit()
+    c = app.test_client()
+    _login(c)
+    html = c.get("/dashboard").get_data(as_text=True)
+    title, inner = re.search(
+        r'title="(Likelihood 4 x Impact 4 [^"]*)">\s*(.*?)\s*</div>', html, re.S).groups()
+    assert re.findall(r'heat-count">(\d+)<', inner) == ["4"]
+    assert "4 open risks" in title
+    split = {rag: int(n) for n, rag in re.findall(r"(\d+) rated (\w+)", title)}
+    assert sum(split.values()) == 4 and split.get("RED") == 2
