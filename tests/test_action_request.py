@@ -127,7 +127,8 @@ def test_one_page_request_asks_the_cio_and_ciso_to_mandate(setup):
     assert "Recommended: Mitigate" in request
     assert "Patch SKY-DC01" in request and "Rotate the krbtgt account" in request
     assert "CIO signature:" in request and "CISO signature:" in request
-    assert "The mandate stands when both the CIO and the CISO have signed." in request
+    assert "MANDATE: CIO and CISO" in request
+    assert "The mandate stands when both have signed." in request
     assert "Directory services &amp;" not in request, "the & was double-escaped"
     assert "Directory services & sign-in" in request
 
@@ -173,7 +174,8 @@ def test_form_and_detail_button_use_the_new_names(setup):
     _app, c, pk = setup
     form = c.get(f"/risks/{pk}/action-request").get_data(as_text=True)
     assert "Risk Action Request: SKR-001" in form
-    assert 'value="CIO and CISO"' in form
+    assert 'name="signer_1"\n           value="CIO"' in form
+    assert 'name="signer_2"\n           value="CISO"' in form
     assert "1. Background" in form and "2. Issue" in form
     assert "Generate Action Request" in form
     detail = c.get(f"/risks/{pk}").get_data(as_text=True)
@@ -199,3 +201,82 @@ def test_requester_and_risk_owner_are_different_people(setup):
             assert "From:" not in line and "Prepared by" not in line and "Requested by" not in line, line
     assert "Prepared by Jane Analyst" in evidence
     assert "Print Name: Pat Owner" in evidence
+
+
+# ── Review 2026-11-04 ─────────────────────────────────────────────────────
+def test_signer_fields_drive_every_mention(setup):
+    """Changing who signs must change every line that names them, not just
+    the To line. Before the fix, the signature lines stayed CIO and CISO."""
+    _app, c, pk = setup
+    request, evidence = _generate(c, pk, signer_1="Interim CIO", signer_2="Deputy CISO")
+    assert "To: Interim CIO and Deputy CISO" in request
+    assert "MANDATE: Interim CIO and Deputy CISO" in request
+    assert "Interim CIO signature:" in request and "Deputy CISO signature:" in request
+    assert "If the Interim CIO and Deputy CISO mandate" in evidence
+    assert "Mandate requested from\nInterim CIO and Deputy CISO" in evidence
+    for line in (request + "\n" + evidence).splitlines():
+        if "CIO" in line and "Interim CIO" not in line:
+            assert "Deputy CISO" in line or "CISO" not in line, f"stale signer: {line!r}"
+            assert "CIO" not in line.replace("CISO", ""), f"stale signer: {line!r}"
+
+
+def test_drafted_text_reads_correctly_for_every_rating(setup):
+    app, _c, _pk = setup
+    from app.action_request import build_context, suggested_defaults
+    from app.models import Risk
+    with app.app_context():
+        amber = Risk(risk_id="SKR-2", likelihood=3, impact=3, business_process="Payroll",
+                     treatment="Accept")
+        ask = suggested_defaults(amber, None)["executive_ask"]
+        assert "for an AMBER residual risk (9.0)" in ask and "a AMBER" not in ask
+
+        red = Risk(risk_id="SKR-3", likelihood=5, impact=5, business_process="Payroll")
+        assert "for a RED residual risk" in suggested_defaults(red, None)["executive_ask"]
+
+        unscored = Risk(risk_id="SKR-4", business_process="Payroll", treatment="Accept")
+        d = suggested_defaults(unscored, None)
+        assert "for an unscored residual risk on Payroll" in d["executive_ask"]
+        accept_box = build_context(unscored, d)["exec_opt_accept_text"]
+        assert "the residual risk through" in accept_box and "UNKNOWN" not in accept_box
+
+
+def test_cve_delete_button_follows_restored_checkmarks():
+    """The script must set the button on load, not only on a click: the
+    browser restores checkmarks when you come Back to the page."""
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "app", "templates", "ingest", "cves.html")
+    script = open(path).read().split("{% block scripts %}")[1]
+    assert "\n    refresh();\n" in script
+    assert "addEventListener('pageshow', refresh)" in script
+
+
+def test_edited_ask_is_kept_when_signers_change(setup):
+    _app, c, pk = setup
+    mine = "Please mandate the patch before the holiday freeze. I can walk you through it."
+    request, _evidence = _generate(c, pk, signer_1="Interim CIO", signer_2="Deputy CISO",
+                                   executive_ask=mine)
+    assert mine in request
+
+
+def test_untouched_ask_with_browser_line_endings_still_follows(setup):
+    _app, c, pk = setup
+    data = _form(c, pk, signer_1="Interim CIO", signer_2="Deputy CISO")
+    data["big_ask"] = data["big_ask"].replace(" ", "\r\n", 1)   # as a browser might wrap it
+    resp = c.post(f"/risks/{pk}/action-request", data=data)
+    z = zipfile.ZipFile(io.BytesIO(resp.data))
+    evidence = _read(z.read([n for n in z.namelist() if "Supporting" in n][0]))
+    assert "Interim CIO and Deputy CISO: mandate remediation of SKR-001" in evidence
+
+
+def test_oldest_open_reads_correctly_with_and_without_findings(setup):
+    app, c, pk = setup
+    request, _e = _generate(c, pk)
+    assert "None open days" not in request
+    # one open finding, but no found date on it
+    assert "Oldest Open\nNot recorded" in request
+    from app.models import VulnerabilityFinding, db
+    with app.app_context():
+        VulnerabilityFinding.query.filter_by(risk_id=pk).delete()
+        db.session.commit()
+    request, _e = _generate(c, pk)
+    assert "Oldest Open\nNone open" in request and "None open days" not in request

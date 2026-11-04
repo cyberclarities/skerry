@@ -76,7 +76,7 @@ label_value_table(doc, glance_w, [
     ["Residual Risk", "{{ residual_score }} ({{ rag_status }})", "Inherent Risk", "{{ inherent_score }} (max)"],
     ["Likelihood", "{{ likelihood_val }} ({{ likelihood_label }})", "Business Impact", "{{ impact_val }} ({{ impact_label }})"],
     ["Exceeds Appetite", "{{ exceeds_appetite }}", "Financial Exposure", "{{ financial_exposure_abbrev }}"],
-    ["Vulnerabilities", "{{ vuln_open_count }} open ({{ vuln_high_count }} High)", "Oldest Open", "{{ vuln_oldest_days }} days"],
+    ["Vulnerabilities", "{{ vuln_open_count }} open ({{ vuln_high_count }} High)", "Oldest Open", "{{ vuln_oldest_days }}"],
 ])
 spacer(doc, 4)
 
@@ -157,7 +157,7 @@ m0 = mand.rows[0].cells[0]
 m0.width = Twips(PAGE_W_TWIPS)
 set_cell_bg(m0, BLOCK_FILL)
 set_cell_borders(m0)
-set_cell_text(m0, "MANDATE: CIO and CISO", bold=True, color=NAVY, size=10)
+set_cell_text(m0, "MANDATE: {{ mandating_executives }}", bold=True, color=NAVY, size=10)
 
 
 def mandate_row(text, size=9):
@@ -172,10 +172,10 @@ mandate_row("Conditions or changes to the mandated option: "
             "_____________________________________________")
 mandate_row("Accountable executive: ____________________   "
             "Complete by: ____________   Review date: ____________")
-mandate_row("CIO signature: ____________________________________     Date: ______________")
-mandate_row("CISO signature: ___________________________________     Date: ______________")
+mandate_row("{{ signer_1 }} signature: ________________________________     Date: ______________")
+mandate_row("{{ signer_2 }} signature: ________________________________     Date: ______________")
 
-body(doc, "The mandate stands when both the CIO and the CISO have signed.",
+body(doc, "The mandate stands when both have signed.",
      italic=True, size=8, color=GRAY, after=4)
 
 body(doc, "Risk owner acknowledgement ({{ risk_owner }}): "

@@ -11,7 +11,7 @@
 <!-- KPI Row -->
 <div class="row g-3 mb-4">
   {% set kpis = [
-    ("Total Risks",         total,                    "shield-exclamation", "primary"),
+    ("Active Risks",        total,                    "shield-exclamation", "primary"),
     ("RED",                 red_count,                "circle-fill",        "danger"),
     ("AMBER",               amber_count,              "circle-fill",        "warning"),
     ("GREEN",               green_count,              "circle-fill",        "success"),
@@ -28,6 +28,9 @@
           <span class="kpi-label">{{ label }}</span>
         </div>
         <div class="kpi-value text-{{ color }}">{{ val }}</div>
+        {% if loop.first %}
+        <div class="small text-muted mt-1" id="closed-note">{{ closed_count }} closed, not counted</div>
+        {% endif %}
       </div>
     </div>
   </div>
@@ -82,14 +85,15 @@
           <span class="heat-key heat-zone-GREEN ms-2"></span> under {{ rag_amber }}.
         </div>
         <div class="small text-muted mt-1">
-          The number in each cell is the total of open risks at that likelihood and impact.
+          The number in each cell is the total of active risks at that likelihood and impact.
           Closed risks are not counted. Hover over a cell to see how its risks are rated after controls.
         </div>
-        {% if heat_unplotted %}
-        <div class="small text-muted mt-1">
-          {{ heat_unplotted }} risk{{ "s" if heat_unplotted != 1 }} not shown: likelihood or impact not set.
+        {% set plotted = namespace(n=0) %}
+        {% for cell in heat_map.values() %}{% set plotted.n = plotted.n + cell.values()|sum %}{% endfor %}
+        <div class="small text-muted mt-1" id="heat-total">
+          <strong>{{ plotted.n }}</strong> of {{ total }} active risk{{ "s" if total != 1 }} on the map{% if heat_unplotted %};
+          {{ heat_unplotted }} not shown because likelihood or impact is not set{% endif %}.
         </div>
-        {% endif %}
       </div>
     </div>
   </div>

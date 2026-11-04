@@ -212,7 +212,7 @@ body(
     doc,
     "By signing below, the risk owner named in this register entry ({{ risk_owner }}) confirms the risk "
     "mechanics, existing controls, and residual risk score above accurately reflect the current state of "
-    "this risk. If the CIO and CISO mandate \"Accept,\" this signature also constitutes formal acceptance "
+    "this risk. If the {{ mandating_executives }} mandate \"Accept,\" this signature also constitutes formal acceptance "
     "of the residual risk described in this document, subject to the conditions and review date recorded "
     "on the Risk Action Request.",
     after=14,

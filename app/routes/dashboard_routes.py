@@ -9,7 +9,15 @@ dashboard_bp = Blueprint("dashboard", __name__)
 @dashboard_bp.route("/dashboard")
 @login_required
 def index():
-    risks = Risk.query.all()
+    everything = Risk.query.all()
+
+    # The dashboard shows exposure we still carry, so every figure on it
+    # counts active risks only: anything not Closed. Accepted risks stay,
+    # because accepting a risk does not make it go away. Before this, the
+    # KPIs, charts, and exposure totals counted closed risks while the heat
+    # map did not, so the top row and the heat map disagreed.
+    risks = [r for r in everything if r.status != "Closed"]
+    closed_count = len(everything) - len(risks)
 
     # KPIs
     total = len(risks)
@@ -25,14 +33,11 @@ def index():
     # label, which comes from the residual score after controls, is kept per
     # cell for the hover text, so a well-controlled risk in a red cell can
     # still be seen as green. Risks missing likelihood or impact cannot be
-    # placed; they are counted so the matrix total adds up. Closed risks are
-    # left off entirely: the map shows exposure we still carry. Accepted risks
-    # stay, because accepting a risk does not make it go away.
+    # placed; they are counted so the matrix total plus the unplotted count
+    # equals the Active Risks figure in the top row.
     heat_map = {}
     unplotted = 0
     for r in risks:
-        if r.status == "Closed":
-            continue
         if r.likelihood and r.impact:
             cell = heat_map.setdefault((r.likelihood, r.impact), {})
             cell[r.rag_status] = cell.get(r.rag_status, 0) + 1
@@ -78,6 +83,7 @@ def index():
     return render_template(
         "dashboard.html",
         total=total,
+        closed_count=closed_count,
         red_count=len(red_risks),
         amber_count=len(amber_risks),
         green_count=len(green_risks),
@@ -95,5 +101,6 @@ def index():
         velocity_counts=velocity_counts,
         fin_stats=fin_stats,
         category_counts=category_counts,
-        recent_risks=sorted(risks, key=lambda r: r.updated_at or r.created_at, reverse=True)[:5],
+        # Recent activity includes closures, so this one list uses every risk.
+        recent_risks=sorted(everything, key=lambda r: r.updated_at or r.created_at, reverse=True)[:5],
     )

@@ -537,7 +537,7 @@ def test_heat_map_shows_every_risk_under_its_current_label(app):
     assert cell(4, 4) == (1, {"GREEN": 1}), "controlled risk shows green inside the red zone"
     assert cell(5, 5) == (1, {"RED": 1})
     assert cell(1, 1) == (0, {}), "an empty cell shows no number"
-    assert "1 risk not shown: likelihood or impact not set." in html
+    assert "1 not shown because likelihood or impact is not set" in html
 
 
 def test_heat_map_leaves_out_closed_risks(app):
@@ -556,7 +556,7 @@ def test_heat_map_leaves_out_closed_risks(app):
     cell = re.search(r'title="Likelihood 5 x Impact 5 [^"]*">\s*(.*?)\s*</div>', html, re.S).group(1)
     assert re.findall(r'heat-count">(\d+)<', cell) == ["2"], \
         "open and accepted count; closed does not"
-    assert "not shown: likelihood or impact not set" not in html, \
+    assert "not shown because likelihood or impact is not set" not in html, \
         "a closed risk with no likelihood is not reported as missing"
 
 
@@ -615,3 +615,37 @@ def test_heat_map_cell_shows_one_cumulative_count(app):
     assert "4 open risks" in title
     split = {rag: int(n) for n, rag in re.findall(r"(\d+) rated (\w+)", title)}
     assert sum(split.values()) == 4 and split.get("RED") == 2
+
+
+def test_dashboard_top_row_and_heat_map_count_the_same_risks(app):
+    """28 risks in the register, 5 of them closed: every figure on the
+    dashboard counts the 23 active ones, and the heat map adds up to that."""
+    from app.models import Risk, db
+    with app.app_context():
+        n = 0
+        for _ in range(22):                     # active, plotted
+            n += 1
+            db.session.add(Risk(risk_id=f"SKR-{n:03d}", likelihood=3, impact=3, status="Open"))
+        n += 1                                  # active, cannot be plotted
+        db.session.add(Risk(risk_id=f"SKR-{n:03d}", likelihood=None, impact=3, status="Open"))
+        for _ in range(5):                      # closed, RED, with exposure
+            n += 1
+            db.session.add(Risk(risk_id=f"SKR-{n:03d}", likelihood=5, impact=5, status="Closed",
+                                board_reporting_flag=True, max_financial_exposure=1_000_000))
+        db.session.commit()
+    c = app.test_client()
+    _login(c)
+    html = c.get("/dashboard").get_data(as_text=True)
+
+    def kpi(label):
+        return int(re.search(rf'kpi-label">{label}</span>\s*</div>\s*<div class="kpi-value[^"]*">(\d+)<',
+                             html).group(1))
+
+    assert kpi("Active Risks") == 23
+    assert "5 closed, not counted" in html
+    assert kpi("RED") == 0, "a closed RED risk is not a RED risk on the dashboard"
+    assert kpi("Board Escalations") == 0
+    total = re.search(r'id="heat-total">\s*<strong>(\d+)</strong> of (\d+) active', html)
+    assert total.groups() == ("22", "23")
+    assert "1 not shown because likelihood or impact is not set" in html
+    assert "$1,000,000" not in html and "$5,000,000" not in html, "closed exposure counted"

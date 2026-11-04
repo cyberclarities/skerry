@@ -167,6 +167,9 @@
       refresh();
     });
     document.querySelectorAll('.row-check').forEach(function (cb) { cb.addEventListener('change', refresh); });
+    // The browser restores checkmarks on Back; match the button to them.
+    refresh();
+    window.addEventListener('pageshow', refresh);
   })();
 </script>
 {% endblock %}

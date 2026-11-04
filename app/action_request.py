@@ -32,8 +32,24 @@ from app.scoring import LIKELIHOOD_LABELS, IMPACT_LABELS, CONTROL_EFFECTIVENESS_
 # documents go to executives, and an empty cell should say what it means.
 DASH = "Not recorded"
 
-# Who the request asks to mandate the action. Editable per request.
-MANDATING_EXECUTIVES = "CIO and CISO"
+# The two executives who sign the mandate. Editable per request (an interim
+# CIO, a deputy CISO), and every mention in both documents follows the two
+# fields: the To line, the mandate heading, both signature lines, and the
+# Supporting Evidence text.
+SIGNERS = ("CIO", "CISO")
+
+
+def _signers(f):
+    s1 = (f.get("signer_1") or "").strip() or SIGNERS[0]
+    s2 = (f.get("signer_2") or "").strip() or SIGNERS[1]
+    return s1, s2
+
+
+def _rag_phrase(rag):
+    """'a RED', 'an AMBER', 'a GREEN'; 'an unscored' when there is no score."""
+    if rag == "UNKNOWN" or not rag:
+        return "an unscored"
+    return f"an {rag}" if rag[0] in "AEIOU" else f"a {rag}"
 
 # "mandate <verb> <subject>" in the one-sentence ask.
 TREATMENT_VERBS = {
@@ -78,7 +94,7 @@ OPTION_BOILERPLATE = {
 EXEC_OPTION_TEXT = {
     "Mitigate": "Mandate the treatment plan in the Recommendation, with the funding, resources, "
                 "and accountable executive it needs.",
-    "Accept": "Mandate formal acceptance of the residual {rag} risk through a set review date, "
+    "Accept": "Mandate formal acceptance of the residual{rag} risk through a set review date, "
               "with documented compensating controls and a named accountable executive.",
     "Avoid": "Mandate stopping or removing the activity, asset, or exposure that creates the risk.",
     "Transfer": "Mandate shifting part of the exposure through insurance, contract, or a third party.",
@@ -152,11 +168,18 @@ def _paragraphs(text):
     return [p.strip() for p in text.split("\n\n") if p.strip()]
 
 
-def suggested_defaults(risk, current_user):
+# Form fields pre-filled with drafted text that names the signers. If the
+# preparer changes the signers and leaves one of these untouched, it is
+# redrafted for the new signers (see _follow_signers).
+DRAFTED_FIELDS = ("executive_ask", "big_ask", "raci_informed")
+
+
+def suggested_defaults(risk, current_user, signers=SIGNERS):
     """Pre-fill values for the export form. All of them are editable."""
     due = risk.due_date
     priority = PRIORITY_FROM_RAG.get(risk.rag_status, PRIORITY_LEVELS[1])
-    to = MANDATING_EXECUTIVES
+    s1, s2 = signers
+    to = f"{s1} and {s2}"
 
     treatment = risk.treatment or "Mitigate"
     verb = TREATMENT_VERBS.get(treatment, "action on")
@@ -173,8 +196,8 @@ def suggested_defaults(risk, current_user):
     # recommended action is not mandated.
     score = f" ({risk.residual_risk_score})" if risk.residual_risk_score is not None else ""
     exec_ask = (
-        f"We are asking the {to} to mandate {treatment} for a {risk.rag_status} residual "
-        f"risk{score} on {exec_subject}"
+        f"We are asking the {to} to mandate {treatment} for {_rag_phrase(risk.rag_status)} "
+        f"residual risk{score} on {exec_subject}"
         + (f", by {due.isoformat()}" if due else "")
         + ". The options and our recommendation follow. If the recommended action is not "
         "mandated, the residual risk stays with the business, and accepting it takes both "
@@ -186,7 +209,8 @@ def suggested_defaults(risk, current_user):
     return dict(
         requestor_name=current_user.name if current_user else "",
         requestor_role="",
-        mandating_executives=to,
+        signer_1=s1,
+        signer_2=s2,
         accountable_executive="",
         mandate_needed_by=due.isoformat() if due else "",
         priority_level=priority,
@@ -207,13 +231,38 @@ def suggested_defaults(risk, current_user):
         raci_responsible=risk.action_owner or "",
         raci_accountable="",
         raci_consulted="",
-        raci_informed="CIO; CISO; affected business units",
+        raci_informed=f"{s1}; {s2}; affected business units",
         assumptions="",
         dependencies="",
         review_trigger="",
         action2_desc="", action2_owner="", action2_due="", action2_status="",
         action3_desc="", action3_owner="", action3_due="", action3_status="",
     )
+
+
+def _same_text(a, b):
+    """Equal once line endings and outer whitespace are set aside: a browser
+    sends a textarea back with \r\n line breaks."""
+    return " ".join((a or "").split()) == " ".join((b or "").split())
+
+
+def _follow_signers(risk, f, signers):
+    """Redraft untouched drafted fields for the signers actually chosen.
+
+    The form opens with the ask already drafted for the default signers.
+    Without this, changing the signers and leaving the ask alone would send
+    a request whose To line names one pair and whose ask names another.
+    Text the preparer edited is theirs and is left as written.
+    """
+    if tuple(signers) == SIGNERS:
+        return f
+    drafted = suggested_defaults(risk, None)
+    redrafted = suggested_defaults(risk, None, signers)
+    out = dict(f)
+    for key in DRAFTED_FIELDS:
+        if _same_text(f.get(key), drafted[key]):
+            out[key] = redrafted[key]
+    return out
 
 
 def build_context(risk, form_fields):
@@ -225,7 +274,9 @@ def build_context(risk, form_fields):
     form. The form renders every key with suggested_defaults() above, but a
     missing key falls back to a bracketed prompt rather than failing.
     """
-    f = form_fields
+    s1, s2 = _signers(form_fields)
+    to = f"{s1} and {s2}"
+    f = _follow_signers(risk, form_fields, (s1, s2))
 
     inherent = risk.inherent_risk_score
     residual = risk.residual_risk_score
@@ -287,7 +338,7 @@ def build_context(risk, form_fields):
         treatment_note = (
             f"Note: The register lists {register_treatment} as the current treatment. The analysis "
             f"below recommends {suggested_treatment} instead. {register_treatment} is not recommended "
-            "unless the CIO and CISO formally accept the residual risk."
+            f"unless the {to} formally accept the residual risk."
         )
 
     # ── Options: one-page request, one mandate box per option ────────────
@@ -298,7 +349,9 @@ def build_context(risk, form_fields):
             text = f"Not viable: {reason}"
             label_suffix = _rt("  (not viable)", "404040", bold=True)
         else:
-            text = EXEC_OPTION_TEXT[key].format(rag=risk.rag_status)
+            # "the residual RED risk"; just "the residual risk" when unscored.
+            rag = "" if risk.rag_status == "UNKNOWN" else f" {risk.rag_status}"
+            text = EXEC_OPTION_TEXT[key].format(rag=rag)
             label_suffix = _rt("  ★ RECOMMENDED", "2E75B6", bold=True) if key == suggested_treatment else ""
         exec_options[key.lower()] = dict(text=text, label_suffix=label_suffix)
 
@@ -346,7 +399,9 @@ def build_context(risk, form_fields):
         request_date=date.today().isoformat(),
         requestor_name=_s(f.get("requestor_name"), "[Name]"),
         requestor_role=_s(f.get("requestor_role"), "[Role]"),
-        mandating_executives=_s(f.get("mandating_executives"), MANDATING_EXECUTIVES),
+        mandating_executives=to,
+        signer_1=s1,
+        signer_2=s2,
         accountable_executive=_s(f.get("accountable_executive"), "[Accountable executive]"),
         mandate_needed_by=_s(f.get("mandate_needed_by"), "[Date]"),
         exec_subject=_s(f.get("exec_subject"), risk.business_process or risk.asset_system),
@@ -382,7 +437,11 @@ def build_context(risk, form_fields):
         financial_exposure_abbrev=financial_exposure_abbrev,
         vuln_open_count=len(open_findings),
         vuln_high_count=high_count,
-        vuln_oldest_days=_s(oldest_days, "None open"),
+        # The unit lives here, not in the template, so "None open" never
+        # becomes "None open days". Open findings with no found date are
+        # "Not recorded", not "None open".
+        vuln_oldest_days=(f"{oldest_days} days" if oldest_days is not None
+                          else DASH if open_findings else "None open"),
 
         # Risk mechanics
         threat_description=_s(risk.threat_description),
@@ -445,7 +504,7 @@ def build_context(risk, form_fields):
         raci_responsible=_s(f.get("raci_responsible"), "[Director / team]"),
         raci_accountable=_s(f.get("raci_accountable"), "[Accountable executive]"),
         raci_consulted=_s(f.get("raci_consulted"), "[Risk, Legal, Finance, Service Owners]"),
-        raci_informed=_s(f.get("raci_informed"), "CIO; CISO; affected business units"),
+        raci_informed=_s(f.get("raci_informed"), f"{s1}; {s2}; affected business units"),
 
         # Action and evidence tracker
         action1_desc=_s(risk.remediation_action, "[Action]"),

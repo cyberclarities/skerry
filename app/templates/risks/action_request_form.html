@@ -50,8 +50,14 @@
           <div class="col-md-6">{{ field("Your role", "requestor_role", hint="Shown beside your name on both documents.") }}</div>
         </div>
         <div class="row">
-          <div class="col-md-6">{{ field("Mandate requested from", "mandating_executives", hint="Both sign the mandate. Defaults to the CIO and CISO.") }}</div>
+          <div class="col-md-3">{{ field("First signer", "signer_1") }}</div>
+          <div class="col-md-3">{{ field("Second signer", "signer_2") }}</div>
           <div class="col-md-6">{{ field("Mandate needed by", "mandate_needed_by", type="date") }}</div>
+        </div>
+        <div class="form-text mt-n2 mb-3">
+          Both sign the mandate. Defaults to the CIO and CISO; change either for an interim or acting
+          executive. The To line, the mandate heading, both signature lines, and any drafted text you
+          have not edited follow these two fields.
         </div>
         <div class="row">
           <div class="col-md-6">{{ field("Accountable executive", "accountable_executive", hint="Who owns the outcome once the action is mandated.") }}</div>
