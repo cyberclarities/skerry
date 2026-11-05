@@ -139,3 +139,65 @@ def test_any_signed_in_user_can_open_it_and_text_has_no_em_dash(app):
     body = html.split("<body>")[1]
     assert "—" not in body
     assert "One-Page Briefing" in c.get("/dashboard").get_data(as_text=True)
+
+
+def test_treatment_counts_and_the_note_that_matters(app):
+    _risk(app, treatment="Mitigate", due_date=ago(5))          # past target
+    _risk(app, treatment="Mitigate", due_date=TODAY + timedelta(days=10))
+    _risk(app, treatment="Accept", acceptance_sign_off_by="CIO")
+    _risk(app, treatment="Accept")                              # no sign-off
+    _risk(app)                                                  # no treatment chosen
+    _risk(app, treatment="Avoid", status="Closed")              # closed, not counted
+    with app.test_request_context():
+        from app.briefing import build_briefing
+        rows = {r["label"]: r for r in build_briefing()["treatment"]["rows"]}
+    assert [rows[k]["n"] for k in ("Mitigate", "Accept", "Transfer", "Avoid", "Not set")] == [2, 2, 0, 0, 1]
+    assert rows["Mitigate"]["note"] == "1 past target date"
+    assert rows["Accept"]["note"] == "1 without sign-off"
+    assert rows["Not set"]["note"] == "needs a decision"
+    assert rows["Transfer"]["note"] == ""
+    assert "How we are treating them" in _page(app)
+
+
+def test_vulnerability_aging_bands(app):
+    from datetime import datetime, time
+
+    from app.models import db
+    from app.models_spotlight import SpotlightFinding
+
+    def seen(days):
+        return datetime.combine(ago(days), time(12, 0))
+
+    rows = [  # (age in days or None, severity, status, suppressed)
+        (0, "CRITICAL", "open", False),
+        (30, "HIGH", "open", False),        # last day of 0-30
+        (31, "HIGH", "reopen", False),      # first day of 31-60
+        (60, "CRITICAL", "open", False),    # last day of 31-60, not past the line
+        (61, "HIGH", "open", False),        # first day past the line
+        (200, "CRITICAL", "open", False),
+        (None, "HIGH", "open", False),      # Spotlight gave no first-seen date
+        (100, "MEDIUM", "open", False),     # below the line we report
+        (100, "HIGH", "closed", False),     # fixed
+        (100, "HIGH", "open", True),        # suppressed in Falcon
+    ]
+    with app.app_context():
+        for i, (age, sev, status, sup) in enumerate(rows):
+            db.session.add(SpotlightFinding(
+                spotlight_id=f"s{i}", aid=f"a{i}", cve_id=f"CVE-2026-{i:04d}", cve_severity=sev,
+                spotlight_status=status, is_suppressed=sup,
+                created_timestamp=seen(age) if age is not None else None))
+        db.session.commit()
+    with app.test_request_context():
+        from app.briefing import build_briefing
+        ag = build_briefing()["aging"]
+    got = {b["label"]: (b["crit"], b["high"]) for b in ag["bars"]}
+    assert got == {"0-30": (1, 1), "31-60": (1, 1), "61-90": (0, 1), "Over 90": (1, 0)}
+    assert (ag["past"], ag["unknown"], ag["critical"], ag["high"]) == (2, 1, 3, 3)
+    html = _page(app)
+    assert "2 past 60 days" in html
+    assert "1 more with no first-seen date" in html
+
+
+def test_aging_without_spotlight_data(app):
+    html = _page(app)
+    assert "No open Critical or High findings from Spotlight." in html

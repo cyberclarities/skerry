@@ -2,7 +2,8 @@
 
 Written for executives and trustees on the same page, in Smart Brevity
 order: a headline with its number, why it matters, four figures with their
-change over 30 days, three charts, what needs attention, the top risks,
+change over 30 days, two charts, how we are treating the risks,
+how long open vulnerabilities have been on our hosts, what needs attention, the top risks,
 and what's next.
 
 Every sentence here is generated from the figures beside it, so the page
@@ -48,7 +49,7 @@ def _delta(now, then, lower_is_better=True):
 
 
 # ── Charts as SVG geometry ───────────────────────────────────────────────
-def _trend(snapshots, width=330, height=100, pad_l=24, pad_b=16, pad_t=6, pad_r=6):
+def _trend(snapshots, width=330, height=82, pad_l=24, pad_b=16, pad_t=6, pad_r=6):
     """Polylines for RED / AMBER / GREEN counts per snapshot day."""
     if len(snapshots) < 2:
         return None
@@ -88,21 +89,95 @@ def _heatmap(active, red_t, amber_t, cell=16, gap=2):
                 placed=sum(counts.values()))
 
 
-def _assurance_bar(active, today, width=330):
-    """How many risk scores rest on tested controls, unproven ones, or none."""
-    states = [assurance.control_assurance(r, today) for r in active]
-    parts = [
-        ("Tested controls", states.count(assurance.TESTED), "#2E75B6"),
-        ("Unproven controls", sum(states.count(s) for s in assurance.UNPROVEN), "#C00000"),
-        ("No controls claimed", states.count(None), "#BFBFBF"),
-    ]
-    total = sum(n for _l, n, _c in parts)
-    x, segments = 0.0, []
-    for label, n, color in parts:
-        w = width * n / total if total else 0
-        segments.append(dict(label=label, n=n, color=color, x=x, w=w))
-        x += w
-    return dict(width=width, segments=segments, total=total)
+TREATMENTS = ("Mitigate", "Accept", "Transfer", "Avoid")
+AGE_BANDS = ((0, 30, "0-30"), (31, 60, "31-60"), (61, 90, "61-90"), (91, None, "Over 90"))
+ELEVATE_AFTER_DAYS = 60   # matches the CVE review's default age in ingest_routes
+
+
+def _treatment(active, width=250):
+    """Active risks by treatment, each with the one note that matters for it."""
+    groups = {}
+    for r in active:
+        key = (r.treatment or "").strip().title() or "Not set"
+        groups.setdefault(key, []).append(r)
+    order = list(TREATMENTS) + sorted(k for k in groups if k not in TREATMENTS and k != "Not set") + ["Not set"]
+    top = max((len(v) for v in groups.values()), default=0)
+    rows = []
+    for key in order:
+        members = groups.get(key, [])
+        if not members and key not in TREATMENTS:
+            continue
+        n = len(members)
+        note, hot = "", False
+        if key == "Mitigate":
+            late = sum(1 for r in members if r.is_overdue)
+            note, hot = (f"{late} past target date", True) if late else ("", False)
+        elif key == "Accept":
+            unsigned = sum(1 for r in members if not r.acceptance_sign_off_by)
+            note, hot = (f"{unsigned} without sign-off", True) if unsigned else ("", False)
+        elif key == "Not set" and n:
+            note, hot = "needs a decision", True
+        rows.append({"label": key, "n": n, "w": width * n / top if top else 0,
+                     "note": note, "hot": hot})
+    return {"rows": rows, "width": width}
+
+
+def _vuln_aging(today, width=250, height=64):
+    """Open, unsuppressed Spotlight findings by days since first seen on our
+    hosts, split Critical and High. Counted in SQL: a tenant can hold far
+    more findings than this page should load."""
+    from sqlalchemy import case, func
+
+    from app.models_spotlight import SpotlightFinding
+    from app.spotlight.ingest import OPEN
+
+    def since(days):   # midnight at the start of the day `days` ago
+        return datetime.combine(today - timedelta(days=days), datetime.min.time())
+
+    created = SpotlightFinding.created_timestamp
+    whens = []
+    for lo, hi, label in AGE_BANDS:   # age in whole days: today minus the day first seen
+        cond = created < since(lo - 1) if lo else created.isnot(None)
+        if hi is not None:
+            cond = cond & (created >= since(hi))
+        whens.append((cond, label))
+    band = case(*whens, else_="unknown")
+    sev = func.upper(SpotlightFinding.cve_severity)
+    rows = (SpotlightFinding.query
+            .with_entities(band.label("band"), sev.label("sev"), func.count().label("n"))
+            .filter(SpotlightFinding.spotlight_status.in_(OPEN),
+                    SpotlightFinding.is_suppressed.is_(False),
+                    sev.in_(("CRITICAL", "HIGH")))
+            .group_by("band", "sev").all())
+    counts = {(b, s): n for b, s, n in rows}
+    total = sum(counts.values())
+    if not total:
+        return {"total": 0}
+
+    pad_l, pad_b, pad_t = 4, 14, 10
+    slot = (width - pad_l) / len(AGE_BANDS)
+    bar_w = slot * 0.56
+    peak = max(counts.get((label, "CRITICAL"), 0) + counts.get((label, "HIGH"), 0)
+               for _lo, _hi, label in AGE_BANDS) or 1
+    plot_h = height - pad_b - pad_t
+    bars = []
+    for i, (lo, _hi, label) in enumerate(AGE_BANDS):
+        crit, high = counts.get((label, "CRITICAL"), 0), counts.get((label, "HIGH"), 0)
+        x = pad_l + slot * i + (slot - bar_w) / 2
+        h_high, h_crit = plot_h * high / peak, plot_h * crit / peak
+        base = height - pad_b
+        bars.append({"label": label, "x": x, "w": bar_w, "cx": x + bar_w / 2,
+                     "crit": crit, "high": high, "n": crit + high,
+                     "y_high": base - h_high, "h_high": h_high,
+                     "y_crit": base - h_high - h_crit, "h_crit": h_crit,
+                     "past_line": lo > ELEVATE_AFTER_DAYS})
+    past = sum(b["n"] for b in bars if b["past_line"])
+    # the 60-day line sits between the 31-60 and 61-90 bars
+    line_x = pad_l + slot * 2
+    return {"total": total, "bars": bars, "width": width, "height": height,
+            "base": height - pad_b, "line_x": line_x, "past": past,
+            "unknown": counts.get(("unknown", "CRITICAL"), 0) + counts.get(("unknown", "HIGH"), 0),
+            "critical": sum(b["crit"] for b in bars), "high": sum(b["high"] for b in bars)}
 
 
 # ── The page ─────────────────────────────────────────────────────────────
@@ -221,7 +296,9 @@ def build_briefing():
         first_snapshot=first.snapshot_date if first else None,
         compare_ready=base is not None,
         heatmap=_heatmap(active, red_t, amber_t),
-        bar=_assurance_bar(active, today),
+        treatment=_treatment(active),
+        aging=_vuln_aging(today),
+        elevate_after=ELEVATE_AFTER_DAYS,
         rag_colors=RAG_COLORS,
         compare_days=COMPARE_DAYS,
         compare_phrase=COMPARE_PHRASE,

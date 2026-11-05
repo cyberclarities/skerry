@@ -3,6 +3,27 @@
 Each release, newest first. The version shown under the logo in the app is
 kept in `app/version.py`; see that file for how to release a new one.
 
+## 1.7.2 (2026-11-04)
+
+### Reports
+- **One-Page Briefing:** two panels where the tested-controls bar was.
+  - **How we are treating them:** active risks by treatment (Mitigate,
+    Accept, Transfer, Avoid, Not set). Mitigations past their target date,
+    acceptances without a sign-off, and risks with no treatment chosen are
+    called out in red.
+  - **How long vulnerabilities have been open:** open, unsuppressed Critical
+    and High Spotlight findings by days since Spotlight first saw them on a
+    host (0-30, 31-60, 61-90, over 90), with the 60-day line from the CVE
+    review marked and the count past it.
+  - The page still prints on one Letter page.
+
+## 1.7.1 (2026-11-04)
+
+### Reports
+- **One-Page Briefing:** removed the "Do our risk scores rest on tested
+  controls?" bar. Untested controls still show in the headline's why it
+  matters, in the top risks ("controls unproven"), and in What's next.
+
 ## 1.7 (2026-11-05)
 
 ### Reports

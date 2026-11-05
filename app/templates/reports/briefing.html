@@ -45,10 +45,16 @@
   .kpi .n { font-size: 7.5pt; }
 
   .row { display: grid; gap: 8pt; margin-bottom: 7pt; }
-  .row.charts { grid-template-columns: 1fr 135pt; }
-  .row.lists { grid-template-columns: 175pt 1fr; }
+  .row.charts { grid-template-columns: 1fr 118pt; }
+  .row.lists { grid-template-columns: 150pt 1fr; }
   .panel { border: 1px solid var(--line); padding: 6pt 9pt; }
   .muted { color: var(--gray); }
+  .row.mid { grid-template-columns: 1fr 1fr; }
+  .treat { width: 100%; border-collapse: collapse; }
+  .treat td { padding: 1.5pt 0; vertical-align: middle; }
+  .treat td.l { width: 52pt; } .treat td.c { width: 18pt; text-align: right; font-weight: bold; padding-right: 5pt; }
+  .treat td.note { font-size: 7.5pt; color: var(--gray); padding-left: 5pt; white-space: nowrap; }
+  .treat td.note.hot { color: var(--red); font-weight: bold; }
   .legend { display: flex; gap: 10pt; font-size: 7.5pt; margin-top: 3pt; color: var(--gray); }
   .legend i { display: inline-block; width: 9pt; height: 3pt; margin-right: 3pt; vertical-align: middle; }
   svg text { font-family: Arial, Helvetica, sans-serif; }
@@ -144,17 +150,49 @@
     </div>
   </div>
 
-  <div class="panel" style="margin-bottom:7pt">
-    <p class="label">Do our risk scores rest on tested controls?</p>
-    {% set bar = b.bar %}
-    {% if bar.total %}
-    <svg width="100%" viewBox="0 0 {{ bar.width }} 16" preserveAspectRatio="none" role="img" aria-label="Control assurance">
-      {% for s in bar.segments if s.w %}<rect x="{{ s.x }}" y="0" width="{{ s.w }}" height="16" fill="{{ s.color }}"/>{% endfor %}
-    </svg>
-    <div class="legend">
-      {% for s in bar.segments %}<span><i style="background:{{ s.color }};height:8pt"></i><b>{{ s.n }}</b> {{ s.label }}</span>{% endfor %}
+  <div class="row mid">
+    <div class="panel" id="treatment">
+      <p class="label">How we are treating them</p>
+      {% set tr = b.treatment %}
+      {% if tr.rows|selectattr('n')|list %}
+      <table class="treat">
+        {% for row in tr.rows %}
+        <tr>
+          <td class="l">{{ row.label }}</td>
+          <td class="c">{{ row.n }}</td>
+          <td><svg width="100%" height="9" viewBox="0 0 {{ tr.width }} 9" preserveAspectRatio="none" aria-hidden="true">
+            <rect x="0" y="0" width="{{ tr.width }}" height="9" fill="#F2F2F2"/>
+            {% if row.w %}<rect x="0" y="0" width="{{ row.w }}" height="9" fill="{{ '#BFBFBF' if row.label == 'Not set' else '#2E75B6' }}"/>{% endif %}
+          </svg></td>
+          <td class="note {{ 'hot' if row.hot }}">{{ row.note }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+      {% else %}<p class="muted" style="margin:0">No active risks.</p>{% endif %}
     </div>
-    {% else %}<p class="muted" style="margin:0">No active risks.</p>{% endif %}
+    <div class="panel" id="aging">
+      <p class="label">How long vulnerabilities have been open</p>
+      {% set ag = b.aging %}
+      {% if ag.total %}
+      <svg width="100%" viewBox="0 0 {{ ag.width }} {{ ag.height }}" role="img" aria-label="Open Critical and High findings by days open">
+        <line x1="0" x2="{{ ag.width }}" y1="{{ ag.base }}" y2="{{ ag.base }}" stroke="#BFBFBF" stroke-width="0.6"/>
+        <line x1="{{ ag.line_x }}" x2="{{ ag.line_x }}" y1="2" y2="{{ ag.base }}" stroke="#002060" stroke-width="0.8" stroke-dasharray="2 2"/>
+        <text x="{{ ag.line_x + 3 }}" y="8" font-size="6.5" fill="#002060">{{ b.elevate_after }}-day line</text>
+        {% for bar in ag.bars %}
+        {% if bar.h_high %}<rect x="{{ bar.x }}" y="{{ bar.y_high }}" width="{{ bar.w }}" height="{{ bar.h_high }}" fill="#E97132"/>{% endif %}
+        {% if bar.h_crit %}<rect x="{{ bar.x }}" y="{{ bar.y_crit }}" width="{{ bar.w }}" height="{{ bar.h_crit }}" fill="#C00000"/>{% endif %}
+        <text x="{{ bar.cx }}" y="{{ (bar.y_crit if bar.n else ag.base) - 2 }}" font-size="7.5" font-weight="bold" text-anchor="middle" fill="#1F3864">{{ bar.n }}</text>
+        <text x="{{ bar.cx }}" y="{{ ag.height - 3 }}" font-size="7" text-anchor="middle" fill="#404040">{{ bar.label }} days</text>
+        {% endfor %}
+      </svg>
+      <div class="legend">
+        <span><i style="background:#C00000"></i>Critical {{ ag.critical }}</span>
+        <span><i style="background:#E97132"></i>High {{ ag.high }}</span>
+        <span>{% if ag.past %}<b style="color:var(--red)">{{ ag.past }} past {{ b.elevate_after }} days</b>{% else %}None past {{ b.elevate_after }} days{% endif %}</span>
+      </div>
+      {% if ag.unknown %}<div class="muted" style="font-size:7pt">{{ ag.unknown }} more with no first-seen date from Spotlight.</div>{% endif %}
+      {% else %}<p class="muted" style="margin:0">No open Critical or High findings from Spotlight.</p>{% endif %}
+    </div>
   </div>
 
   <div class="row lists">
@@ -197,7 +235,7 @@
   <div class="foot">
     <b>Terms.</b> RAG: the Red, Amber, Green rating of a risk after its controls. Controls tested: tested and passed in the last
     365 days; unproven means never tested, tested longer ago, or failed. KEV: CISA's catalog of vulnerabilities known to be
-    exploited by attackers.
+    exploited by attackers. Finding: one vulnerability on one host, counted from when Spotlight first saw it there.
     {% if b.compare_ready %}Changes compare with the register {{ b.compare_phrase }}.{% elif b.first_snapshot %}
     {{ b.compare_days }}-day changes appear once the daily snapshot, started {{ b.first_snapshot.isoformat() }}, is {{ b.compare_days }} days old.{% endif %}
     Generated by Skerry {{ app_version }}.

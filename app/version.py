@@ -15,4 +15,4 @@ report; the third, starting at .1, for a small revision on top of that
 followed by 1.8, not 1.8.0.
 """
 
-__version__ = "1.7"
+__version__ = "1.7.2"

@@ -1,6 +1,6 @@
 # Skerry — User Guide
 
-**Version:** 1.7  
+**Version:** 1.7.2  
 **Platform:** Skerry — `skerry.example.com`  
 **Audience:** Everyone with an account — Viewer, Operator, and Admin
 
@@ -211,7 +211,7 @@ Navigate to **Reports** in the left sidebar. All six reports are available to al
 
 ### One-Page Briefing
 
-A single page for executives and trustees, built live from the register in Smart Brevity order: a headline with the main number, why it matters, four figures with their change from a month ago, the 90-day trend by rating, where risks sit, how many risk scores rest on tested controls, what needs attention, the top five risks, and up to three next steps. A short glossary at the foot explains RAG, KEV, and tested controls for readers outside security.
+A single page for executives and trustees, built live from the register in Smart Brevity order: a headline with the main number, why it matters, four figures with their change from a month ago, the 90-day trend by rating, where risks sit, how we are treating them, how long open Critical and High vulnerabilities have been on our hosts, what needs attention, the top five risks, and up to three next steps. A short glossary at the foot explains RAG, KEV, tested controls, and findings for readers outside security.
 
 Every sentence is generated from the figures beside it, so it never claims more than the data shows. The month comparisons appear once the daily snapshot is a month old. Use **Print / Save as PDF** to send it; it fits one Letter page.
 
