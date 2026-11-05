@@ -3,6 +3,22 @@
 Each release, newest first. The version shown under the logo in the app is
 kept in `app/version.py`; see that file for how to release a new one.
 
+## 1.7.4 (2026-11-04)
+
+### Navigation
+- **Admin** collapses the same way as Reports: click the heading to fold it
+  away. Each browser remembers the choice, and the group always opens when
+  you are on an admin page.
+
+## 1.7.3 (2026-11-04)
+
+### Navigation
+- **Excel Export** moved from its own Export section to the end of
+  **Reports** in the sidebar.
+- **Reports** collapses: click the heading to fold the list away. Each
+  browser remembers whether you left it open or closed; it always opens
+  when you are on a report.
+
 ## 1.7.2 (2026-11-04)
 
 ### Reports

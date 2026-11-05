@@ -86,6 +86,12 @@
       color: #fff;
     }
     #sidebar nav a i { width: 1.1rem; text-align: center; font-size: 1rem; }
+    /* A collapsible group: native <details>, so it opens and closes without script. */
+    #sidebar nav details > summary { list-style: none; cursor: pointer; display: flex; align-items: center; }
+    #sidebar nav details > summary::-webkit-details-marker { display: none; }
+    #sidebar nav details > summary:hover { color: rgba(255,255,255,.75); }
+    #sidebar nav details > summary .chev { margin-left: auto; font-size: .7rem; transition: transform .15s; }
+    #sidebar nav details[open] > summary .chev { transform: rotate(90deg); }
     #sidebar .user-footer {
       padding: .75rem 1rem;
       border-top: 1px solid rgba(255,255,255,.1);
@@ -182,44 +188,66 @@
       <i class="bi bi-radar"></i> Spotlight Ingest
     </a>
 
-    <div class="nav-section">Reports</div>
-    <a href="{{ url_for('reports.briefing') }}" class="{{ 'active' if request.endpoint == 'reports.briefing' }}">
-      <i class="bi bi-file-earmark-bar-graph"></i> One-Page Briefing
-    </a>
-    <a href="{{ url_for('reports.overdue') }}" class="{{ 'active' if request.endpoint == 'reports.overdue' }}">
-      <i class="bi bi-clock-history"></i> Overdue Actions
-    </a>
-    <a href="{{ url_for('reports.trend') }}" class="{{ 'active' if request.endpoint == 'reports.trend' }}">
-      <i class="bi bi-graph-up-arrow"></i> Risk Trend Log
-    </a>
-    <a href="{{ url_for('reports.csf_coverage') }}" class="{{ 'active' if request.endpoint == 'reports.csf_coverage' }}">
-      <i class="bi bi-diagram-3"></i> CSF Coverage
-    </a>
-    <a href="{{ url_for('reports.controls') }}" class="{{ 'active' if request.endpoint == 'reports.controls' }}">
-      <i class="bi bi-shield-check"></i> Control Assurance
-    </a>
-    <a href="{{ url_for('reports.reviews') }}" class="{{ 'active' if request.endpoint == 'reports.reviews' }}">
-      <i class="bi bi-calendar-check"></i> Reviews Due
-    </a>
-
-    <div class="nav-section">Export</div>
-    <a href="{{ url_for('exports.export_excel') }}">
-      <i class="bi bi-file-earmark-excel"></i> Excel Export
-    </a>
+    {% set in_reports = request.blueprint in ('reports', 'exports') %}
+    <details class="nav-group" id="nav-reports" data-keep-open="{{ 'yes' if in_reports else 'no' }}" open>
+      <summary class="nav-section">Reports <i class="bi bi-chevron-right chev"></i></summary>
+      <a href="{{ url_for('reports.briefing') }}" class="{{ 'active' if request.endpoint == 'reports.briefing' }}">
+        <i class="bi bi-file-earmark-bar-graph"></i> One-Page Briefing
+      </a>
+      <a href="{{ url_for('reports.overdue') }}" class="{{ 'active' if request.endpoint == 'reports.overdue' }}">
+        <i class="bi bi-clock-history"></i> Overdue Actions
+      </a>
+      <a href="{{ url_for('reports.trend') }}" class="{{ 'active' if request.endpoint == 'reports.trend' }}">
+        <i class="bi bi-graph-up-arrow"></i> Risk Trend Log
+      </a>
+      <a href="{{ url_for('reports.csf_coverage') }}" class="{{ 'active' if request.endpoint == 'reports.csf_coverage' }}">
+        <i class="bi bi-diagram-3"></i> CSF Coverage
+      </a>
+      <a href="{{ url_for('reports.controls') }}" class="{{ 'active' if request.endpoint == 'reports.controls' }}">
+        <i class="bi bi-shield-check"></i> Control Assurance
+      </a>
+      <a href="{{ url_for('reports.reviews') }}" class="{{ 'active' if request.endpoint == 'reports.reviews' }}">
+        <i class="bi bi-calendar-check"></i> Reviews Due
+      </a>
+      <a href="{{ url_for('exports.export_excel') }}">
+        <i class="bi bi-file-earmark-excel"></i> Excel Export
+      </a>
+    </details>
 
     {% if current_user.is_admin %}
-    <div class="nav-section">Admin</div>
-    <a href="{{ url_for('users.manage') }}" class="{{ 'active' if request.blueprint == 'users' }}">
-      <i class="bi bi-people"></i> User Management
-    </a>
-    <a href="{{ url_for('settings.manage') }}" class="{{ 'active' if request.blueprint == 'settings' }}">
-      <i class="bi bi-sliders"></i> Settings
-    </a>
-    <a href="{{ url_for('ingest.runs') }}" class="{{ 'active' if request.endpoint == 'ingest.runs' }}">
-      <i class="bi bi-arrow-repeat"></i> Spotlight Sync
-    </a>
+    {% set in_admin = request.blueprint in ('users', 'settings') or request.endpoint == 'ingest.runs' %}
+    <details class="nav-group" id="nav-admin" data-keep-open="{{ 'yes' if in_admin else 'no' }}" open>
+      <summary class="nav-section">Admin <i class="bi bi-chevron-right chev"></i></summary>
+      <a href="{{ url_for('users.manage') }}" class="{{ 'active' if request.blueprint == 'users' }}">
+        <i class="bi bi-people"></i> User Management
+      </a>
+      <a href="{{ url_for('settings.manage') }}" class="{{ 'active' if request.blueprint == 'settings' }}">
+        <i class="bi bi-sliders"></i> Settings
+      </a>
+      <a href="{{ url_for('ingest.runs') }}" class="{{ 'active' if request.endpoint == 'ingest.runs' }}">
+        <i class="bi bi-arrow-repeat"></i> Spotlight Sync
+      </a>
+    </details>
     {% endif %}
   </nav>
+  <script>
+    // Remember whether each sidebar group was left open or closed, per browser.
+    // A group holding the page you are on always stays open. Storage can be
+    // unavailable (private windows, blocked site data); the menu works without it.
+    document.querySelectorAll('#sidebar details.nav-group').forEach(function (group) {
+      var key = 'skerry.nav.' + group.id;
+      try {
+        if (group.dataset.keepOpen !== 'yes' && localStorage.getItem(key) === 'closed') { group.open = false; }
+      } catch (e) {}
+      // Save on the click itself, not on 'toggle': the browser also fires
+      // 'toggle' when a page loads with the group open, which would overwrite
+      // the choice every time a report page is visited. Enter and Space on
+      // the heading arrive as clicks too.
+      group.querySelector('summary').addEventListener('click', function () {
+        try { localStorage.setItem(key, group.open ? 'closed' : 'open'); } catch (e) {}
+      });
+    });
+  </script>
   <div class="user-footer">
     <div><strong>{{ current_user.name }}</strong></div>
     <div>{{ current_user.role | capitalize }}</div>

@@ -1,6 +1,6 @@
 # Skerry — User Guide
 
-**Version:** 1.7.2  
+**Version:** 1.7.4  
 **Platform:** Skerry — `skerry.example.com`  
 **Audience:** Everyone with an account — Viewer, Operator, and Admin
 
@@ -207,7 +207,7 @@ A field-level change history — every edit, what field changed, what the old va
 
 ## 5. Reports
 
-Navigate to **Reports** in the left sidebar. All six reports are available to all roles.
+Navigate to **Reports** in the left sidebar. All six reports and the Excel export are available to all roles. Click the **Reports** heading to collapse or expand the list; the sidebar remembers your choice in that browser, and the list always opens when you are on a report.
 
 ### One-Page Briefing
 
@@ -249,7 +249,7 @@ Once a day, just after midnight UTC, Skerry records one row of counts: active an
 
 ## 6. Exporting Data
 
-The Excel export is available to all roles, accessible from **Export** in the left sidebar.
+The Excel export is available to all roles, listed last under **Reports** in the left sidebar.
 
 ### Excel Export
 
