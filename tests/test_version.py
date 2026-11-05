@@ -37,6 +37,7 @@ def test_docs_agree_with_the_version():
     assert newest == __version__, "add a CHANGELOG.md entry for this version"
     assert f"| **PackageVersion** | {__version__} |" in _read("SBOM.md")
     assert f"**Version:** {__version__}" in _read("USER_GUIDE.md")
+    assert f"**Version:** {__version__}" in _read("ADMIN_GUIDE.md")
 
 
 def test_version_has_two_or_three_parts():

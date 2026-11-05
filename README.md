@@ -39,8 +39,8 @@ libraries are required.
 ## Getting started
 
 ```bash
-git clone <your-repo-url> risk-register
-cd risk-register
+git clone <your-repo-url> skerry
+cd skerry
 cp .env.example .env
 ```
 

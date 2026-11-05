@@ -10,6 +10,43 @@ kept in `app/version.py`; see that file for how to release a new one.
   away. Each browser remembers the choice, and the group always opens when
   you are on an admin page.
 
+### Documentation
+- **ADMIN_GUIDE.md** brought up to date with the code. The ones that
+  matter most:
+  - The shipped `docker-compose.yml` publishes HTTPS on host port 8443 and
+    nothing on port 80. The guide said 443 with a redirect from 80. Every
+    address, `BASE_URL`, and the SSO redirect URI now carry `:8443`, with
+    how to move to 443.
+  - The host-level backup used a plain `cp`, described as safe because of
+    WAL mode. The database is not in WAL mode. Backups now use SQLite's
+    backup function through the container.
+  - Operators can set treatment to Accept; only the sign-off is admin-only.
+  - Changing `ADMIN_EMAIL` after first start creates a second admin.
+  - New: scheduled jobs, the daily snapshot, the Spotlight admin pages and
+    permissions, and every environment variable the app reads.
+  - Paths and the Caddy volume name follow the `skerry` folder, and the
+    guide's version line now tracks the app's.
+- `.env.example` shows `BASE_URL` with `:8443`, and the README clones into
+  `skerry`, to match.
+- **USER_GUIDE.md** brought up to date with the code:
+  - New section 13, **Working the Spotlight Ingest Queue**: the views,
+    elevate, triage, dismiss, delete, bulk delete by CVE, and what the next
+    sync does with each. Admin sections renumbered 14 to 17.
+  - Operators can close and accept the risks they can edit; only the
+    acceptance sign-off is Admin-only. The guide and its role table said
+    otherwise.
+  - Deleting a risk keeps its audit and trend history, out of sight; the
+    guide said it was erased.
+  - A hand-entered vulnerability finding cannot be edited to Remediated;
+    the guide said to do that. Spotlight-linked findings update themselves.
+  - Logging a review restarts the risk's review clock; its control test
+    result does not update the risk's own test fields.
+  - Owner-name matching ignores capitalization; RAG bands written for
+    decimal scores; dashboard cards, the sign-in address, and the
+    collapsible sidebar groups match the app.
+- Em dashes cleared from both guides, headings and links included. The
+  dashes left in the role tables are "no" marks, not punctuation.
+
 ## 1.7.3 (2026-11-04)
 
 ### Navigation
