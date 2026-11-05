@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cyber Risk Briefing · {{ b.today.isoformat() }}</title>
+<style>
+  /* PB-000 template colors; no yellow. Sized in points so print matches screen. */
+  :root {
+    --banner: #002060; --navy: #1F3864; --blue: #2E75B6; --rule: #2E5496;
+    --red: #C00000; --amber: #E97132; --green: #196B24; --gray: #404040;
+    --light: #F2F2F2; --line: #CCCCCC;
+  }
+  @page { size: Letter; margin: 0.4in; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #E9ECEF; color: #000; font-family: Arial, Helvetica, sans-serif; font-size: 8.5pt; }
+  .toolbar { max-width: 8.5in; margin: 14px auto 8px; display: flex; gap: 8px; align-items: center; font-size: 10pt; }
+  .toolbar a { color: var(--blue); text-decoration: none; }
+  .toolbar button { margin-left: auto; background: var(--navy); color: #fff; border: 0; border-radius: 4px; padding: 6px 14px; font-size: 10pt; cursor: pointer; }
+  .sheet { width: 8.5in; min-height: 11in; margin: 0 auto 24px; background: #fff; padding: 0.4in; box-shadow: 0 2px 10px rgba(0,0,0,.15); }
+  @media print {
+    body { background: #fff; }
+    .toolbar { display: none; }
+    .sheet { width: auto; min-height: 0; margin: 0; padding: 0; box-shadow: none; }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+
+  .banner { background: var(--banner); color: #fff; padding: 8pt 14pt; display: flex; justify-content: space-between; align-items: flex-end; }
+  .banner h1 { margin: 0; font-size: 17pt; letter-spacing: .04em; }
+  .banner .sub { font-size: 8.5pt; opacity: .85; margin-top: 2pt; }
+  .banner .stamp { text-align: right; font-size: 8pt; opacity: .85; }
+
+  .label { color: var(--navy); font-size: 7.5pt; font-weight: bold; letter-spacing: .08em; text-transform: uppercase; margin: 0 0 4pt; }
+  .headline { font-size: 15pt; font-weight: bold; color: var(--navy); line-height: 1.25; margin: 2pt 0 4pt; }
+  .why { font-size: 9.5pt; line-height: 1.4; margin: 0 0 8pt; }
+  .why b { color: var(--navy); }
+
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6pt; margin-bottom: 8pt; }
+  .kpi { border: 1px solid var(--line); border-top: 3pt solid var(--blue); padding: 6pt 8pt; }
+  .kpi .v { font-size: 22pt; font-weight: bold; line-height: 1; color: var(--navy); }
+  .kpi .v.bad { color: var(--red); } .kpi .v.good { color: var(--green); }
+  .kpi .l { font-weight: bold; margin-top: 3pt; }
+  .kpi .d { font-size: 7.5pt; margin-top: 2pt; }
+  .d.good { color: var(--green); } .d.bad { color: var(--red); } .d.flat, .kpi .n { color: var(--gray); }
+  .kpi .n { font-size: 7.5pt; }
+
+  .row { display: grid; gap: 8pt; margin-bottom: 7pt; }
+  .row.charts { grid-template-columns: 1fr 135pt; }
+  .row.lists { grid-template-columns: 175pt 1fr; }
+  .panel { border: 1px solid var(--line); padding: 6pt 9pt; }
+  .muted { color: var(--gray); }
+  .legend { display: flex; gap: 10pt; font-size: 7.5pt; margin-top: 3pt; color: var(--gray); }
+  .legend i { display: inline-block; width: 9pt; height: 3pt; margin-right: 3pt; vertical-align: middle; }
+  svg text { font-family: Arial, Helvetica, sans-serif; }
+
+  .attn { width: 100%; border-collapse: collapse; }
+  .attn td { padding: 3pt 0; border-bottom: 1px solid var(--light); }
+  .attn td.n { text-align: right; font-weight: bold; font-size: 10pt; width: 28pt; }
+  .attn td.n.hot { color: var(--red); } .attn td.n.zero { color: var(--green); }
+
+  table.top { width: 100%; border-collapse: collapse; }
+  table.top th { background: var(--navy); color: #fff; text-align: left; font-size: 7.5pt; padding: 3pt 5pt; }
+  table.top td { padding: 3pt 5pt; border-bottom: 1px solid var(--light); vertical-align: top; }
+  table.top td.nw { white-space: nowrap; }
+  table.top tr:nth-child(even) td { background: var(--light); }
+  .pill { display: inline-block; color: #fff; font-size: 7pt; font-weight: bold; padding: 1pt 4pt; border-radius: 2pt; }
+  .flag { color: var(--red); font-size: 7pt; font-weight: bold; }
+
+  .next { border-left: 4pt solid var(--blue); padding: 5pt 10pt; background: #F7FAFD; margin-bottom: 7pt; }
+  .next ol { margin: 0; padding-left: 14pt; font-size: 9.5pt; line-height: 1.45; }
+  .foot { border-top: 1px solid var(--rule); padding-top: 5pt; font-size: 7pt; color: var(--gray); line-height: 1.4; }
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <a href="{{ url_for('dashboard.index') }}">&larr; Dashboard</a>
+  <span class="muted">Prints on one Letter page. Use Print, then Save as PDF to send it.</span>
+  <button type="button" onclick="window.print()">Print / Save as PDF</button>
+</div>
+
+<div class="sheet">
+  <div class="banner">
+    <div>
+      <h1>CYBER RISK BRIEFING</h1>
+      <div class="sub">Live from the Skerry risk register · For executives and trustees</div>
+    </div>
+    <div class="stamp">As of<br><b>{{ b.as_of }}</b></div>
+  </div>
+
+  <p class="label" style="margin-top:8pt">The big picture</p>
+  <div class="headline" id="headline">{{ b.headline }}</div>
+  <p class="why" id="why"><b>Why it matters:</b> {{ b.why }}</p>
+
+  <p class="label">By the numbers</p>
+  <div class="kpis">
+    {% for k in b.kpis %}
+    <div class="kpi">
+      <div class="v {{ k.tone or '' }}">{{ k.value }}</div>
+      <div class="l">{{ k.label }}</div>
+      {% if k.delta %}<div class="d {{ k.delta.tone }}">{{ k.delta.text }}</div>{% endif %}
+      <div class="n">{{ k.note }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="row charts">
+    <div class="panel">
+      <p class="label">Active risks by rating, last {{ b.trend_days }} days</p>
+      {% set t = b.trend %}
+      {% if t %}
+      <svg width="100%" viewBox="0 0 {{ t.width }} {{ t.height }}" role="img" aria-label="Trend of RED, AMBER and GREEN risks">
+        {% for g in t.grid %}
+        <line x1="{{ t.x0 }}" x2="{{ t.x1 }}" y1="{{ g.y }}" y2="{{ g.y }}" stroke="#E3E3E3" stroke-width="0.6"/>
+        <text x="{{ t.x0 - 4 }}" y="{{ g.y + 3 }}" font-size="7" text-anchor="end" fill="#404040">{{ g.label }}</text>
+        {% endfor %}
+        {% for l in t.lines %}
+        <polyline points="{{ l.points }}" fill="none" stroke="{{ l.color }}" stroke-width="1.6" stroke-linejoin="round"/>
+        {% endfor %}
+        <text x="{{ t.x0 }}" y="{{ t.height - 3 }}" font-size="7" fill="#404040">{{ t.first }}</text>
+        <text x="{{ t.x1 }}" y="{{ t.height - 3 }}" font-size="7" fill="#404040" text-anchor="end">{{ t.last }}</text>
+      </svg>
+      <div class="legend">
+        {% for l in t.lines %}<span><i style="background:{{ l.color }}"></i>{{ l.label }} {{ l.last }}</span>{% endfor %}
+      </div>
+      {% else %}
+      <p class="muted" style="margin:18pt 0">
+        The trend draws from the daily snapshot{% if b.first_snapshot %}, collecting since {{ b.first_snapshot.isoformat() }}{% endif %}.
+        It appears from the second day.
+      </p>
+      {% endif %}
+    </div>
+    <div class="panel">
+      <p class="label">Where risks sit</p>
+      {% set h = b.heatmap %}
+      <svg width="100%" viewBox="0 0 {{ h.width }} {{ h.height }}" role="img" aria-label="Heat map of likelihood by impact">
+        {% for c in h.cells %}
+        <rect x="{{ c.x }}" y="{{ c.y }}" width="{{ h.cell }}" height="{{ h.cell }}" fill="{{ c.fill }}" rx="1.5"/>
+        {% if c.n %}<text x="{{ c.x + h.cell / 2 }}" y="{{ c.y + h.cell / 2 + 3.5 }}" font-size="9" font-weight="bold" text-anchor="middle" fill="#1F3864">{{ c.n }}</text>{% endif %}
+        {% endfor %}
+        <text x="2" y="{{ (h.height - 14) / 2 }}" font-size="6.5" fill="#404040" transform="rotate(-90 6 {{ (h.height - 14) / 2 }})" text-anchor="middle">Impact</text>
+        <text x="{{ 14 + (h.width - 14) / 2 }}" y="{{ h.height - 2 }}" font-size="6.5" fill="#404040" text-anchor="middle">Likelihood</text>
+      </svg>
+      <div class="muted" style="font-size:7pt;margin-top:2pt">Shaded by score before controls: RED {{ b.red_t }}+, AMBER {{ b.amber_t }}+.</div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-bottom:7pt">
+    <p class="label">Do our risk scores rest on tested controls?</p>
+    {% set bar = b.bar %}
+    {% if bar.total %}
+    <svg width="100%" viewBox="0 0 {{ bar.width }} 16" preserveAspectRatio="none" role="img" aria-label="Control assurance">
+      {% for s in bar.segments if s.w %}<rect x="{{ s.x }}" y="0" width="{{ s.w }}" height="16" fill="{{ s.color }}"/>{% endfor %}
+    </svg>
+    <div class="legend">
+      {% for s in bar.segments %}<span><i style="background:{{ s.color }};height:8pt"></i><b>{{ s.n }}</b> {{ s.label }}</span>{% endfor %}
+    </div>
+    {% else %}<p class="muted" style="margin:0">No active risks.</p>{% endif %}
+  </div>
+
+  <div class="row lists">
+    <div class="panel">
+      <p class="label">Needs attention</p>
+      <table class="attn">
+        {% for label, n in b.tiles %}
+        <tr><td>{{ label }}</td><td class="n {{ 'hot' if n else 'zero' }}">{{ n }}</td></tr>
+        {% endfor %}
+      </table>
+    </div>
+    <div class="panel">
+      <p class="label">Top risks after controls</p>
+      <table class="top">
+        <tr><th>Risk</th><th>What it is</th><th>Owner</th><th>Rating</th></tr>
+        {% for row in b.top_rows %}
+        {% set r = row.risk %}
+        <tr>
+          <td class="nw"><b>{{ r.risk_id }}</b></td>
+          <td>{{ row.title }}{% if row.unproven %} <span class="flag">· controls unproven</span>{% endif %}</td>
+          <td>{{ r.risk_owner or "Unassigned" }}</td>
+          <td class="nw"><span class="pill" style="background:{{ b.rag_colors.get(r.rag_status, '#7F7F7F') }}">{{ r.rag_status }}</span> {{ r.residual_risk_score if r.residual_risk_score is not none else "" }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="muted">No active risks.</td></tr>
+        {% endfor %}
+      </table>
+    </div>
+  </div>
+
+  <div class="next">
+    <p class="label">What's next</p>
+    {% if b.actions %}
+    <ol>{% for a in b.actions %}<li>{{ a }}</li>{% endfor %}</ol>
+    {% else %}
+    <p style="margin:0;font-size:9.5pt">Nothing is waiting on a decision. Keep reviews and control tests on schedule.</p>
+    {% endif %}
+  </div>
+
+  <div class="foot">
+    <b>Terms.</b> RAG: the Red, Amber, Green rating of a risk after its controls. Controls tested: tested and passed in the last
+    365 days; unproven means never tested, tested longer ago, or failed. KEV: CISA's catalog of vulnerabilities known to be
+    exploited by attackers.
+    {% if b.compare_ready %}Changes compare with the register {{ b.compare_phrase }}.{% elif b.first_snapshot %}
+    {{ b.compare_days }}-day changes appear once the daily snapshot, started {{ b.first_snapshot.isoformat() }}, is {{ b.compare_days }} days old.{% endif %}
+    Generated by Skerry {{ app_version }}.
+  </div>
+</div>
+</body>
+</html>

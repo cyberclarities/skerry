@@ -3,6 +3,19 @@
 Each release, newest first. The version shown under the logo in the app is
 kept in `app/version.py`; see that file for how to release a new one.
 
+## 1.7 (2026-11-05)
+
+### Reports
+- **One-Page Briefing** for executives and trustees, live from the register:
+  a generated headline with its number and why it matters, four figures
+  with their change from a month ago, the 90-day trend by rating, a heat
+  map, how many risk scores rest on tested controls, what needs attention,
+  the top five risks, and up to three next steps. Prints on one Letter page;
+  use Print, then Save as PDF, to send it.
+
+### Upgrading
+- Rebuild: `docker compose up -d --build`. No settings change.
+
 ## 1.6 (2026-11-04)
 
 ### Dashboard

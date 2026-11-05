@@ -134,6 +134,15 @@ def controls():
     )
 
 
+@reports_bp.route("/briefing")
+@login_required
+def briefing():
+    """The one-page Cyber Risk Briefing, live from the register. Prints on
+    one Letter page; see app/briefing.py."""
+    from app.briefing import build_briefing
+    return render_template("reports/briefing.html", b=build_briefing())
+
+
 @reports_bp.route("/reviews")
 @login_required
 def reviews():

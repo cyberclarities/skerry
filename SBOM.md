@@ -31,7 +31,7 @@
 | Field | Value |
 |---|---|
 | **PackageName** | skerry |
-| **PackageVersion** | 1.6 |
+| **PackageVersion** | 1.7 |
 | **PackageSupplier** | Organization: CyberClarities |
 | **PackageHomePage** | internal |
 | **PackageLicenseDeclared** | MIT |

@@ -183,6 +183,9 @@
     </a>
 
     <div class="nav-section">Reports</div>
+    <a href="{{ url_for('reports.briefing') }}" class="{{ 'active' if request.endpoint == 'reports.briefing' }}">
+      <i class="bi bi-file-earmark-bar-graph"></i> One-Page Briefing
+    </a>
     <a href="{{ url_for('reports.overdue') }}" class="{{ 'active' if request.endpoint == 'reports.overdue' }}">
       <i class="bi bi-clock-history"></i> Overdue Actions
     </a>
