@@ -3,6 +3,18 @@
 Each release, newest first. The version shown under the logo in the app is
 kept in `app/version.py`; see that file for how to release a new one.
 
+## 1.5 (2026-11-04)
+
+### Register
+- **Set the CSF mapping from the register.** A CSF column shows each risk's
+  subcategory; click it to change one risk, or tick several and use **Set CSF
+  for selected**. One pick sets the subcategory, category, and function
+  together, so they always agree. Changes go in the audit log, and operators
+  can only change risks they created or own.
+
+### Upgrading
+- Rebuild: `docker compose up -d --build`. No settings change.
+
 ## 1.4 (2026-11-04)
 
 The first release with a version number. It shows under the logo in the

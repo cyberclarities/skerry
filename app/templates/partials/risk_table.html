@@ -3,6 +3,12 @@
     <table class="table table-hover table-sm mb-0 small">
       <thead>
         <tr>
+          {% if current_user.is_operator %}
+          <th style="width:28px;">
+            <input type="checkbox" class="form-check-input" id="risk-check-all"
+                   title="Select every risk you can change on this page">
+          </th>
+          {% endif %}
           <th style="width:80px;">Risk ID</th>
           <th>Category</th>
           <th>Threat Description</th>
@@ -13,12 +19,22 @@
           <th>Owner</th>
           <th style="width:90px;">Due Date</th>
           <th style="width:90px;">Status</th>
+          <th style="width:90px;" title="NIST CSF 2.0 subcategory">CSF</th>
           <th style="width:80px;">Actions</th>
         </tr>
       </thead>
       <tbody>
         {% for r in risks %}
+        {% set editable = can_edit(r) %}
         <tr id="risk-row-{{ r.id }}" class="{{ 'table-danger' if r.is_overdue else '' }}">
+          {% if current_user.is_operator %}
+          <td>
+            {% if editable %}
+            <input type="checkbox" class="form-check-input risk-check" value="{{ r.id }}"
+                   aria-label="Select {{ r.risk_id }}">
+            {% endif %}
+          </td>
+          {% endif %}
           <td>
             <a href="{{ url_for('risks.detail', risk_pk=r.id) }}"
                class="fw-semibold text-decoration-none">{{ r.risk_id }}</a>
@@ -49,6 +65,23 @@
               {{ r.status }}
             </span>
           </td>
+          {# Shows the subcategory; an older mapping set only to a category or
+             function shows that instead. The description is on hover. #}
+          {% set code = r.nist_csf_subcategory or r.nist_csf_category or r.nist_csf_function %}
+          {% set ref = csf.get(r.nist_csf_subcategory) if r.nist_csf_subcategory else None %}
+          <td class="text-nowrap">
+            {% if editable %}
+            <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none csf-edit"
+                    data-action="{{ url_for('risks.set_csf', risk_pk=r.id) }}"
+                    data-risk="{{ r.risk_id }}" data-csf="{{ r.nist_csf_subcategory or '' }}"
+                    title="{{ ref.description if ref else 'Click to set the CSF subcategory' }}">
+              {% if code %}{{ code }}{% else %}<span class="text-muted">Set</span>{% endif %}
+              <i class="bi bi-pencil small text-muted"></i>
+            </button>
+            {% else %}
+            <span title="{{ ref.description if ref else '' }}">{{ code or "Not set" }}</span>
+            {% endif %}
+          </td>
           <td>
             <a href="{{ url_for('risks.detail', risk_pk=r.id) }}"
                class="btn btn-xs btn-outline-secondary btn-sm py-0 px-1" title="View">
@@ -74,7 +107,7 @@
         </tr>
         {% else %}
         <tr>
-          <td colspan="11" class="text-center text-muted py-4">
+          <td colspan="{{ 13 if current_user.is_operator else 12 }}" class="text-center text-muted py-4">
             No risks match your filters.
             {% if current_user.is_operator %}
             <a href="{{ url_for('risks.new_risk') }}">Add the first one.</a>

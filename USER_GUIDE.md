@@ -1,6 +1,6 @@
 # Skerry — User Guide
 
-**Version:** 1.4  
+**Version:** 1.5  
 **Platform:** Skerry — `skerry.example.com`  
 **Audience:** Everyone with an account — Viewer, Operator, and Admin
 
@@ -112,19 +112,30 @@ The search bar at the top matches against Risk ID, threat description, asset/sys
 
 ### Filters
 
-Five filters are available alongside the search bar:
+These filters sit alongside the search bar:
 
-- **RAG Status** — filter to Red, Amber, or Green risks only
-- **Category** — filter by risk category (Infrastructure, Application, Data, etc.)
-- **Status** — filter by workflow status (Open, In Progress, Closed, Accepted)
-- **Owner** — partial text match against the Risk Owner field
-- **Exceeds Appetite** — show only risks that exceed the risk appetite threshold (Yes) or those that do not (No)
+- **RAG Status:** Red, Amber, or Green risks only.
+- **Category:** one risk category (Infrastructure, Application, Data, and so on).
+- **Status:** tick one or more statuses (Open, In Progress, Closed, Accepted). None ticked shows all.
+- **Exceeds Appetite:** risks over the risk appetite threshold (Yes), or under it (No).
+- **Hide closed:** hides Closed risks whatever else is picked.
 
-Filters can be combined. Clear them by selecting the blank option from each dropdown.
+Filters can be combined. They are kept in the page address, so a refresh, the Back button, or a bookmark brings back the same view.
 
 ### Risk List Columns
 
-Each row in the register shows the essential fields at a glance — Risk ID, category, asset, likelihood, impact, inherent and residual scores, RAG status, owner, due date, and current status. Click any row to open the full record.
+Each row shows Risk ID, category, threat, asset, inherent and residual scores, RAG status, owner, due date, status, and the NIST CSF subcategory the risk maps to. Click a Risk ID to open the full record.
+
+### Setting the CSF Mapping
+
+Operators and admins can set a risk's NIST CSF mapping from the register, without opening the risk:
+
+- **One risk:** click its code in the **CSF** column (or **Set** when it has none). Pick a subcategory and save.
+- **Several risks:** tick their checkboxes, or the box in the header for every risk on the page, then **Set CSF for selected**. The subcategory you pick goes on every risk you ticked.
+
+In the picker, type a code such as `ID.RA-01` to jump to it. You pick the subcategory only; its category and function are filled in from it, so the three always agree. **Not set** at the top clears the mapping.
+
+Operators can only change risks they created or own, so only those rows show a checkbox and an editable code. Every change is recorded in the risk's audit log, the same as an edit.
 
 ---
 

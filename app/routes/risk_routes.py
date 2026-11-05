@@ -7,6 +7,7 @@ from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from app.models import db, AuditLog, Risk, TrendLog, VulnerabilityFinding, NISTCSFReference, LookupItem
 from app.decorators import admin_required, operator_required, log_audit
+from app.routes.auth_routes import _safe_next
 from app.scoring import LIKELIHOOD_LABELS, IMPACT_LABELS, CONTROL_EFFECTIVENESS_LABELS
 from app.action_request import PRIORITY_LEVELS, build_context, suggested_defaults
 
@@ -39,15 +40,115 @@ def _require_edit_rights(risk):
     risks whose owner field matches their display name. A risk with no owner
     needs an admin; there is no silent fallthrough.
     """
+    if not _can_edit(risk):
+        abort(403)
+
+
+def _can_edit(risk):
+    """True when the current user may change this risk (see above). Also
+    used by the register to decide which rows get a checkbox and an
+    editable CSF cell."""
+    if not current_user.is_authenticated or not current_user.is_operator:
+        return False
     if current_user.is_admin:
-        return
+        return True
     created_by_me = risk.created_by_id == current_user.id
-    owned_by_me = (
+    owned_by_me = bool(
         risk.risk_owner
         and risk.risk_owner.strip().lower() == current_user.name.strip().lower()
     )
-    if not (created_by_me or owned_by_me):
-        abort(403)
+    return created_by_me or owned_by_me
+
+
+# ── CSF mapping from the register ────────────────────────────────────────
+def _csf_lookup():
+    """subcategory code -> its reference row, for labels and validation."""
+    return {r.subcategory_code: r for r in NISTCSFReference.query.all()}
+
+
+def _csf_picker_groups(lookup):
+    """[(group label, [(code, label), ...]), ...] for the picker, grouped by
+    category in code order, each group labeled with its function."""
+    groups = {}
+    for code in sorted(lookup):
+        ref = lookup[code]
+        key = (ref.function_code, ref.category_code)
+        label = f"{ref.function_name} · {ref.category_code} {ref.category_name}"
+        desc = (ref.description or "").strip()
+        if len(desc) > 90:
+            desc = desc[:87].rstrip() + "..."
+        groups.setdefault(key, (label, []))[1].append((code, f"{code}  {desc}"))
+    return [groups[k] for k in sorted(groups)]
+
+
+def _apply_csf(risk, ref):
+    """Set the risk's CSF mapping from one subcategory reference row (or
+    clear it when ref is None). The subcategory decides the category and
+    function, so the three can never disagree. Returns the audit diff."""
+    new = (ref.function_code, ref.category_code, ref.subcategory_code) if ref else (None, None, None)
+    old = (risk.nist_csf_function, risk.nist_csf_category, risk.nist_csf_subcategory)
+    risk.nist_csf_function, risk.nist_csf_category, risk.nist_csf_subcategory = new
+    return {
+        "nist_csf_function": (old[0], new[0]),
+        "nist_csf_category": (old[1], new[1]),
+        "nist_csf_subcategory": (old[2], new[2]),
+    }
+
+
+def _csf_from_form(lookup):
+    """The submitted subcategory: a reference row, None to clear, or abort
+    400 for a code that is not in the CSF reference."""
+    code = (request.form.get("subcategory") or "").strip()
+    if not code:
+        return None
+    if code not in lookup:
+        abort(400)
+    return lookup[code]
+
+
+@risks_bp.route("/<int:risk_pk>/csf", methods=["POST"])
+@operator_required
+def set_csf(risk_pk):
+    """Set one risk's CSF mapping from the register, without opening it."""
+    risk = db.get_or_404(Risk, risk_pk)
+    _require_edit_rights(risk)
+    ref = _csf_from_form(_csf_lookup())
+    log_audit(risk, current_user, "updated", _apply_csf(risk, ref))
+    db.session.commit()
+    flash(f"{risk.risk_id} mapped to {ref.subcategory_code}." if ref
+          else f"{risk.risk_id}: CSF mapping cleared.", "success")
+    return redirect(_safe_next(request.form.get("back"), url_for("risks.list_risks")))
+
+
+@risks_bp.route("/csf/bulk", methods=["POST"])
+@operator_required
+def set_csf_bulk():
+    """Set one CSF mapping on every risk checked in the register.
+
+    Each risk gets the same edit-rights check as editing it: a risk this
+    user may not change is skipped and counted, never changed.
+    """
+    back = _safe_next(request.form.get("back"), url_for("risks.list_risks"))
+    ids = request.form.getlist("risk_ids", type=int)
+    if not ids:
+        flash("No risks selected.", "warning")
+        return redirect(back)
+    ref = _csf_from_form(_csf_lookup())
+    changed = skipped = 0
+    for risk in Risk.query.filter(Risk.id.in_(ids)).order_by(Risk.id):
+        if not _can_edit(risk):
+            skipped += 1
+            continue
+        log_audit(risk, current_user, "updated", _apply_csf(risk, ref))
+        changed += 1
+    db.session.commit()
+    target = ref.subcategory_code if ref else "no CSF mapping"
+    message = f"{changed} risk{'s' if changed != 1 else ''} set to {target}."
+    if skipped:
+        message += (f" {skipped} left unchanged: you can only change risks you "
+                    f"created or own.")
+    flash(message, "success" if changed else "warning")
+    return redirect(back)
 
 
 def _lookup(category):
@@ -167,13 +268,18 @@ def list_risks():
     elif appetite_filter == "no":
         risks = [r for r in risks if not r.exceeds_risk_appetite]
 
+    # The CSF column labels every code, and the picker lists all of them.
+    csf = _csf_lookup()
+    table_ctx = dict(risks=risks, can_edit=_can_edit, csf=csf)
+
     # For HTMX partial requests
     if request.headers.get("HX-Request"):
-        return render_template("partials/risk_table.html", risks=risks)
+        return render_template("partials/risk_table.html", **table_ctx)
 
     return render_template(
         "risks/list.html",
-        risks=risks,
+        **table_ctx,
+        csf_groups=_csf_picker_groups(csf),
         risk_categories=RISK_CATEGORIES,
         statuses=STATUSES,
         q=q,
