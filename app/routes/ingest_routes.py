@@ -85,6 +85,7 @@ def _filters(source=None):
         "state": src.get("state", "").strip(),
         "ptype": src.get("ptype", "").strip(),
         "kev": _flag("kev", src),
+        "kev_overdue": _flag("kev_overdue", src),
         "internet": _flag("internet", src),
         "include_closed": _flag("include_closed", src),
         "include_handled": _flag("include_handled", src),
@@ -112,6 +113,10 @@ def _apply_filters(query, f):
         query = query.filter(SpotlightFinding.aid.in_(typed))
     if f["kev"]:
         query = query.filter(SpotlightFinding.is_cisa_kev.is_(True))
+    if f.get("kev_overdue"):
+        # Matches the dashboard's "KEV past CISA due" (app/assurance.py).
+        query = query.filter(SpotlightFinding.is_cisa_kev.is_(True),
+                             SpotlightFinding.cisa_due_date < date.today())
     if f["internet"]:
         exposed = db.session.query(SpotlightHost.aid).filter(
             func.lower(SpotlightHost.internet_exposure) == "yes"

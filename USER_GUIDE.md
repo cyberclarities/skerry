@@ -1,6 +1,6 @@
 # Skerry — User Guide
 
-**Version:** 1.5  
+**Version:** 1.6  
 **Platform:** Skerry — `skerry.example.com`  
 **Audience:** Everyone with an account — Viewer, Operator, and Admin
 
@@ -70,21 +70,31 @@ You land on the Dashboard. The left sidebar shows navigation options based on yo
 
 ## 2. The Dashboard
 
-The Dashboard gives you a current-state picture of the risk register without requiring you to dig into individual records.
+The Dashboard gives you a current picture of the register without opening individual records. Every figure on it counts active risks only: anything not Closed. Accepted risks count, because accepting a risk does not make it go away.
+
+### Needs Attention
+
+The panel at the top holds only things someone has to act on. Each tile shows a count and opens the list behind it; a tile with work waiting turns red.
+
+- **Overdue actions:** remediation past its due date. Opens the Overdue Actions report.
+- **Reviews past due:** risks past their review date (see Reviews Due, below).
+- **Acceptances due:** accepted risks due for another look within 30 days, or with no review frequency at all.
+- **RED on unproven controls:** risks that are RED before controls, whose score after controls rests on controls never tested, last tested more than a year ago, or failed. Opens Control Assurance. A risk can look AMBER or GREEN on the rest of the dashboard and still count here; that is the point of the tile.
+- **KEV past CISA due:** open Spotlight findings in the CISA Known Exploited Vulnerabilities catalog past their CISA due date, whatever their triage state. Opens the CVE view filtered to them.
+
+When nothing is waiting, the panel says so.
 
 ### KPI Row
 
-The top row of cards shows counts by RAG status — Red, Amber, Green — along with three additional indicators:
-
-- **Exceeds Appetite** — risks where the residual score is above the organization's defined risk appetite threshold
-- **Overdue Actions** — risks where the due date has passed and the status is still open
-- **Board Flagged** — risks marked for board-level reporting
-
-These numbers are live — they reflect the current state of the register every time the page loads.
+Active risks (with how many closed risks are left out), counts by RAG rating (Red, Amber, Green), risks that exceed the risk appetite, and risks flagged for board reporting. Overdue actions live in the Needs Attention panel above.
 
 ### Risk Heat Map
 
-The grid maps Likelihood (columns, left to right, 1–5) against Impact (rows, bottom to top, 1–5). Each cell shows how many risks fall at that combination. Darker or more populated cells toward the top-right corner indicate the most severe concentration of risk. Empty cells are not a sign of good news — they may mean risks in those areas have not been identified yet.
+The grid maps Likelihood (columns, left to right, 1 to 5) against Impact (rows, bottom to top, 1 to 5). Each cell shows how many active risks sit at that combination, shaded by the score before controls. Hover over a cell to see how its risks are rated after controls. A line under the map shows how many active risks are on it, and how many cannot be placed because likelihood or impact is not set.
+
+### Register Trend
+
+Active risks by rating, one point per day. Skerry records the register's counts once a day, just after midnight UTC (see Daily Snapshot below). The chart appears from the second day of snapshots; until then the card says when collecting began.
 
 ### Control Test Status
 
@@ -197,7 +207,7 @@ A field-level change history — every edit, what field changed, what the old va
 
 ## 5. Reports
 
-Navigate to **Reports** in the left sidebar. All three reports are available to all roles.
+Navigate to **Reports** in the left sidebar. All five reports are available to all roles.
 
 ### Overdue Actions
 
@@ -214,6 +224,20 @@ Shows the score history for every risk that has trend log entries. A line chart 
 Maps the risk register against the six NIST CSF 2.0 functions (Govern, Identify, Protect, Detect, Respond, Recover) and their sub-categories. Shows where risks are documented and where there are gaps.
 
 A gap on this report does not necessarily mean a security gap — it may mean risks in that area have not been documented yet. Both are worth understanding. Risks with no CSF mapping at all are listed at the bottom.
+
+### Control Assurance
+
+Risks whose score after controls depends on controls nobody has proven: never tested, last tested more than 365 days ago, or failed. A risk "depends on controls" when it has a control effectiveness rating, because that rating is what lowers its score. Each row shows the score before and after controls and how much the controls lower it; if those controls do not hold, the risk is back at its score before controls. **RED before controls** narrows the list to the risks that would be RED.
+
+To clear a row, test the control and record the test date and result on the risk, or lower its control effectiveness to what you can show.
+
+### Reviews Due
+
+Two lists. **Past due:** active risks past their review date. A risk is due its review frequency after its last review (Monthly every 30 days, Quarterly every 90, Annually every 365); an acceptance sign-off counts as a review, and a risk never reviewed counts from the day it was identified. **Acceptances due:** accepted risks whose next review is within 30 days or already past, plus accepted risks with no review frequency, since an acceptance with no review date never expires on its own. The page also says how many active risks have no review frequency set; those never come due. The same rule drives the review-due emails.
+
+### Daily Snapshot
+
+Once a day, just after midnight UTC, Skerry records one row of counts: active and closed risks, risks by rating, appetite and board flags, every Needs Attention figure, and open Spotlight findings. It is taken by the first request of the day; Docker's health check makes one every 30 seconds, so it happens whether or not anyone signs in. A day's row is never changed afterward. This is what the Register Trend chart draws from, and history starts the day this version is installed.
 
 ---
 

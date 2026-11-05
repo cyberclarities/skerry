@@ -3,6 +3,37 @@
 Each release, newest first. The version shown under the logo in the app is
 kept in `app/version.py`; see that file for how to release a new one.
 
+## 1.6 (2026-11-04)
+
+### Dashboard
+- **Needs attention panel** at the top: overdue actions, reviews past due,
+  acceptances due within 30 days, RED risks resting on unproven controls,
+  and KEV findings past their CISA due date. Each tile opens its list.
+- **Register trend:** active risks by rating, one point per day, drawn from
+  the new daily snapshot.
+- Overdue actions moved from the top row into the panel.
+
+### Reports
+- **Control Assurance:** risks whose score after controls rests on controls
+  never tested, tested over a year ago, or failed, with what the score falls
+  back to if they do not hold.
+- **Reviews Due:** risks past their review date, and acceptances coming due.
+
+### Daily snapshot
+- One row of register counts per day, just after midnight UTC. History
+  starts the day this version is installed.
+
+### Spotlight
+- **KEV past CISA due** filter on the host, finding, and CVE views.
+
+### Fixes
+- The review-due emails and the dashboard now share one review rule. An
+  acceptance sign-off now counts as a review for the emails too.
+
+### Upgrading
+- Rebuild: `docker compose up -d --build`. The new snapshot table is created
+  on startup; no settings change.
+
 ## 1.5 (2026-11-04)
 
 ### Register

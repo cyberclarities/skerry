@@ -315,3 +315,42 @@ class NISTCSFReference(db.Model):
 
     def __repr__(self):
         return f"<NIST {self.subcategory_code}>"
+
+
+class RegisterSnapshot(db.Model):
+    """One row of register counts per day, for trends over time.
+
+    Nothing else in the register remembers how it looked last month: the
+    trend log records reviews, not counts. A snapshot is taken once a day
+    (see app/snapshots.py), so history starts the day this table does.
+    Rows are only ever added; a day's counts are never rewritten.
+    """
+    __tablename__ = "register_snapshots"
+
+    id = db.Column(db.Integer, primary_key=True)
+    snapshot_date = db.Column(db.Date, unique=True, nullable=False, index=True)
+    taken_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    # The register (active = not Closed)
+    active = db.Column(db.Integer, default=0)
+    closed = db.Column(db.Integer, default=0)
+    red = db.Column(db.Integer, default=0)
+    amber = db.Column(db.Integer, default=0)
+    green = db.Column(db.Integer, default=0)
+    unscored = db.Column(db.Integer, default=0)
+    exceeds_appetite = db.Column(db.Integer, default=0)
+    board_flags = db.Column(db.Integer, default=0)
+
+    # Needs attention (app/assurance.py)
+    overdue_actions = db.Column(db.Integer, default=0)
+    reviews_past_due = db.Column(db.Integer, default=0)
+    acceptances_due = db.Column(db.Integer, default=0)
+    unproven_controls = db.Column(db.Integer, default=0)
+    unproven_on_red = db.Column(db.Integer, default=0)
+
+    # Spotlight
+    kev_past_due = db.Column(db.Integer, default=0)
+    spotlight_open = db.Column(db.Integer, default=0)
+
+    def __repr__(self):
+        return f"<RegisterSnapshot {self.snapshot_date}>"

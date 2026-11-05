@@ -8,6 +8,43 @@
 
 {% block content %}
 
+<!-- Needs attention: only things someone has to act on (app/assurance.py) -->
+{% set tiles = [
+  ("Overdue actions", attention.overdue_actions, url_for('reports.overdue'),
+   "Remediation past its due date"),
+  ("Reviews past due", attention.reviews_past_due, url_for('reports.reviews') ~ '#past-due',
+   "Risks past their review date"),
+  ("Acceptances due", attention.acceptances_due, url_for('reports.reviews') ~ '#acceptances',
+   "Accepted risks to look at again within 30 days"),
+  ("RED on unproven controls", attention.unproven_on_red, url_for('reports.controls', basis='red'),
+   "RED before controls, resting on untested, stale, or failed controls"),
+  ("KEV past CISA due", attention.kev_past_due,
+   url_for('ingest.cves', kev_overdue=1, min_age=0, include_handled=1),
+   "Open known-exploited vulnerabilities past the CISA date"),
+] %}
+{% set waiting = tiles | selectattr(1) | list | length %}
+<div class="card shadow-sm mb-4 {{ 'border-danger' if waiting else 'border-success' }}" id="needs-attention">
+  <div class="card-header d-flex justify-content-between align-items-center py-2">
+    <span class="fw-semibold small text-uppercase text-muted">Needs attention</span>
+    <span class="small {{ 'text-danger' if waiting else 'text-success' }}">
+      {% if waiting %}{{ waiting }} of {{ tiles|length }} need action{% else %}Nothing waiting{% endif %}
+    </span>
+  </div>
+  <div class="card-body py-2">
+    <div class="row g-2">
+      {% for label, n, link, hint in tiles %}
+      <div class="col-6 col-md-4 col-xl">
+        <a href="{{ link }}" class="d-block text-decoration-none rounded p-2 h-100 attention-tile {{ 'attention-hot' if n else '' }}" title="{{ hint }}">
+          <div class="fs-3 fw-bold lh-1 {{ 'text-danger' if n else 'text-success' }}">{{ n }}</div>
+          <div class="small fw-semibold text-body mt-1">{{ label }}</div>
+          <div class="small text-muted">{{ hint }}</div>
+        </a>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
 <!-- KPI Row -->
 <div class="row g-3 mb-4">
   {% set kpis = [
@@ -16,7 +53,6 @@
     ("AMBER",               amber_count,              "circle-fill",        "warning"),
     ("GREEN",               green_count,              "circle-fill",        "success"),
     ("Exceed Appetite",     exceeds_appetite_count,   "exclamation-triangle","warning"),
-    ("Overdue Actions",     overdue_count,            "clock-history",      "danger"),
     ("Board Escalations",   board_flag_count,         "flag-fill",          "primary"),
   ] %}
   {% for label, val, icon, color in kpis %}
@@ -158,6 +194,24 @@
   </div>
 </div>
 
+<!-- Register trend from the daily snapshots (app/snapshots.py) -->
+<div class="card shadow-sm mb-4" id="register-trend">
+  <div class="card-header d-flex justify-content-between align-items-center py-2">
+    <span class="fw-semibold small text-uppercase text-muted">Register Trend: active risks by rating</span>
+    {% if first_snapshot %}<span class="small text-muted">Daily since {{ first_snapshot.isoformat() }}</span>{% endif %}
+  </div>
+  <div class="card-body py-3">
+    {% if trend.dates|length >= 2 %}
+    <canvas id="trendChart" height="70"></canvas>
+    {% else %}
+    <p class="small text-muted mb-0">
+      Collecting{% if first_snapshot %} since {{ first_snapshot.isoformat() }}{% endif %}. Skerry records the
+      register's counts once a day; the trend appears here from the second day.
+    </p>
+    {% endif %}
+  </div>
+</div>
+
 <!-- Recent Activity -->
 <div class="card shadow-sm">
   <div class="card-header d-flex justify-content-between align-items-center py-2">
@@ -194,6 +248,29 @@
 
 {% block scripts %}
 <script>
+{% if trend.dates|length >= 2 %}
+new Chart(document.getElementById('trendChart'), {
+  type: 'line',
+  data: {
+    labels: {{ trend.dates | tojson }},
+    datasets: [
+      { label: 'RED',   data: {{ trend.red | tojson }},   borderColor: '#dc3545', backgroundColor: '#dc3545', tension: 0 },
+      { label: 'AMBER', data: {{ trend.amber | tojson }}, borderColor: '#fd7e14', backgroundColor: '#fd7e14', tension: 0 },
+      { label: 'GREEN', data: {{ trend.green | tojson }}, borderColor: '#198754', backgroundColor: '#198754', tension: 0 },
+    ]
+  },
+  options: {
+    plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } },
+    // Straight lines between days: a smoothed curve can overshoot and draw
+    // counts that never happened. A year of dates is thinned to ~12 labels.
+    scales: {
+      y: { beginAtZero: true, ticks: { precision: 0 } },
+      x: { ticks: { maxTicksLimit: 12, maxRotation: 0, autoSkip: true } },
+    },
+    elements: { point: { radius: 2 } },
+  }
+});
+{% endif %}
 const testCtx = document.getElementById('testChart');
 new Chart(testCtx, {
   type: 'doughnut',

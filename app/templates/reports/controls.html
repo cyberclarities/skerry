@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Control Assurance · Skerry{% endblock %}
+{% block breadcrumb %}Reports &rsaquo; Control Assurance{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-2">
+  <div>
+    <h5 class="fw-bold mb-1">Control Assurance</h5>
+    <p class="text-muted small mb-0" style="max-width:62rem">
+      Risks whose score after controls depends on controls nobody has proven: never tested, last tested
+      more than {{ stale_days }} days ago, or failed. A control that has not been tested is a claim, not
+      assurance. If these controls do not hold, each risk is back at its score before controls.
+    </p>
+  </div>
+  <div class="btn-group btn-group-sm flex-shrink-0 ms-3">
+    <a href="{{ url_for('reports.controls') }}" class="btn {{ 'btn-primary' if not red_only else 'btn-outline-primary' }}">
+      All ({{ all_count }})</a>
+    <a href="{{ url_for('reports.controls', basis='red') }}" class="btn {{ 'btn-primary' if red_only else 'btn-outline-primary' }}">
+      RED before controls ({{ red_count }})</a>
+  </div>
+</div>
+
+<p class="small text-muted mb-3">
+  Of the active risks, {{ tested_count }} {{ "rests" if tested_count == 1 else "rest" }} on controls tested
+  and passed within {{ stale_days }} days, and {{ no_claim_count }} {{ "claims" if no_claim_count == 1 else "claim" }}
+  no control effectiveness, so nothing in {{ "its" if no_claim_count == 1 else "their" }} score depends on controls.
+</p>
+
+<div class="card shadow-sm">
+  <div class="card-body p-0">
+    <table class="table table-hover table-sm small mb-0 align-middle">
+      <thead>
+        <tr>
+          <th>Risk ID</th>
+          <th>Threat (Summary)</th>
+          <th>Owner</th>
+          <th class="text-center" title="Likelihood x impact">Before controls</th>
+          <th class="text-center">After controls</th>
+          <th class="text-center" title="How much the controls lower the score">Lowered by</th>
+          <th>Effectiveness claimed</th>
+          <th>Last test</th>
+          <th>Assurance</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        {% set r = row.risk %}
+        <tr>
+          <td><a href="{{ url_for('risks.detail', risk_pk=r.id) }}" class="fw-semibold text-decoration-none">{{ r.risk_id }}</a></td>
+          <td class="text-truncate" style="max-width:240px;" title="{{ r.threat_description }}">{{ (r.threat_description or "—")[:70] }}</td>
+          <td>{{ r.risk_owner or "—" }}</td>
+          <td class="text-center">
+            {{ r.inherent_risk_score or "—" }}
+            <span class="badge badge-rag-{{ row.inherent_rag }}">{{ row.inherent_rag }}</span>
+          </td>
+          <td class="text-center">
+            {{ r.residual_risk_score or "—" }}
+            <span class="badge badge-rag-{{ r.rag_status }}">{{ r.rag_status }}</span>
+          </td>
+          <td class="text-center fw-semibold">{{ row.reduction if row.reduction is not none else "—" }}</td>
+          <td>{{ r.control_effectiveness }} ({{ effectiveness_labels.get(r.control_effectiveness, "?") }})</td>
+          <td>
+            {% if r.last_control_test_date %}{{ r.last_control_test_date.strftime('%Y-%m-%d') }}{% if r.control_test_result %}: {{ r.control_test_result }}{% endif %}
+            {% else %}<span class="text-muted">None on record</span>{% endif %}
+          </td>
+          <td>
+            <span class="badge {{ {'Failed':'bg-danger','Never tested':'bg-warning text-dark','No result recorded':'bg-warning text-dark','Stale':'bg-secondary'}.get(row.status, 'bg-light text-dark') }}">{{ row.status }}</span>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" class="text-center text-muted py-4">
+          {% if red_only %}No risk that is RED before controls depends on unproven controls.
+          {% else %}Every control a risk score depends on has been tested and passed within {{ stale_days }} days.{% endif %}
+        </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<p class="small text-muted mt-2">
+  To clear a row, test the control and record the date and result on the risk, or lower its control
+  effectiveness to what you can show.
+</p>
+{% endblock %}

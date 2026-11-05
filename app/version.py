@@ -12,4 +12,4 @@ Numbering: the first number moves for a change in how the app is used or
 deployed that people need to be told about; the second for everything else.
 """
 
-__version__ = "1.5"
+__version__ = "1.6"

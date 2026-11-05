@@ -1,6 +1,9 @@
+from datetime import date, timedelta
+
 from flask import Blueprint, current_app, render_template
 from flask_login import login_required
-from app.models import Risk
+from app.assurance import needs_attention
+from app.models import RegisterSnapshot, Risk
 
 dashboard_bp = Blueprint("dashboard", __name__)
 
@@ -80,10 +83,29 @@ def index():
         cat = r.risk_category or "Uncategorized"
         category_counts[cat] = category_counts.get(cat, 0) + 1
 
+    # Needs attention: only things someone has to act on. The rules live in
+    # app/assurance.py, shared with the reports each tile links to.
+    attention = needs_attention(everything, date.today(), rag_red, rag_amber)
+
+    # Register trend from the daily snapshots: the last 365 days.
+    snapshots = (RegisterSnapshot.query
+                 .filter(RegisterSnapshot.snapshot_date >= date.today() - timedelta(days=365))
+                 .order_by(RegisterSnapshot.snapshot_date).all())
+    first_snapshot = (RegisterSnapshot.query
+                      .order_by(RegisterSnapshot.snapshot_date).first())
+
     return render_template(
         "dashboard.html",
         total=total,
         closed_count=closed_count,
+        attention=attention,
+        trend=dict(
+            dates=[s.snapshot_date.isoformat() for s in snapshots],
+            red=[s.red for s in snapshots],
+            amber=[s.amber for s in snapshots],
+            green=[s.green for s in snapshots],
+        ),
+        first_snapshot=first_snapshot.snapshot_date if first_snapshot else None,
         red_count=len(red_risks),
         amber_count=len(amber_risks),
         green_count=len(green_risks),

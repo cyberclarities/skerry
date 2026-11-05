@@ -134,6 +134,11 @@
       border-radius: 2px; border: 1px solid rgba(0,0,0,.15);
     }
 
+    /* Needs attention tiles */
+    .attention-tile { border: 1px solid #e9ecef; background: #fff; transition: background .15s; }
+    .attention-tile:hover { background: #f8f9fa; }
+    .attention-tile.attention-hot { border-color: #f1aeb5; background: #fff5f5; }
+
     /* Cards */
     .kpi-card { border: none; border-radius: 8px; }
     .kpi-card .kpi-value { font-size: 2.2rem; font-weight: 700; line-height: 1; }
@@ -186,6 +191,12 @@
     </a>
     <a href="{{ url_for('reports.csf_coverage') }}" class="{{ 'active' if request.endpoint == 'reports.csf_coverage' }}">
       <i class="bi bi-diagram-3"></i> CSF Coverage
+    </a>
+    <a href="{{ url_for('reports.controls') }}" class="{{ 'active' if request.endpoint == 'reports.controls' }}">
+      <i class="bi bi-shield-check"></i> Control Assurance
+    </a>
+    <a href="{{ url_for('reports.reviews') }}" class="{{ 'active' if request.endpoint == 'reports.reviews' }}">
+      <i class="bi bi-calendar-check"></i> Reviews Due
     </a>
 
     <div class="nav-section">Export</div>

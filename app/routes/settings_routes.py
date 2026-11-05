@@ -226,6 +226,9 @@ def db_import():
         # Then apply the same queue cleanup a restart would: merge duplicate
         # host+CVE rows and drop findings below the configured severities.
         db.create_all()
+        # The imported database has its own snapshot history; let the next
+        # request take today's row if it has none.
+        current_app.extensions.pop("snapshot_day", None)
         from app.spotlight.maintenance import dedupe_and_prune
         dedupe_and_prune(current_app.config.get("SPOTLIGHT_SEVERITIES") or ("CRITICAL", "HIGH"))
         current_app.logger.warning(

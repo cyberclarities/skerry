@@ -483,6 +483,13 @@ def run_sync_job(app):
     try:
         with app.app_context():
             run_sync(app, trigger="scheduled")
+            # Take the day's register snapshot now, so its Spotlight figures
+            # are this sync's. A day already snapshotted is left alone.
+            from app.snapshots import take_snapshot_if_missing
+            try:
+                take_snapshot_if_missing()
+            except Exception:  # noqa: BLE001 -- the sync itself succeeded
+                log.exception("Register snapshot after the nightly sync failed")
     finally:
         _sync_lock.release()
 

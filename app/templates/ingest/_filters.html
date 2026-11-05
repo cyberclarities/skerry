@@ -59,6 +59,11 @@
       <label class="form-check-label" for="f-kev">CISA KEV only</label>
     </div>
     <div class="form-check form-check-inline small">
+      <input class="form-check-input" type="checkbox" name="kev_overdue" value="1" id="f-kev-overdue"
+             {{ 'checked' if filters.kev_overdue }}>
+      <label class="form-check-label" for="f-kev-overdue">KEV past CISA due</label>
+    </div>
+    <div class="form-check form-check-inline small">
       <input class="form-check-input" type="checkbox" name="internet" value="1" id="f-net"
              {{ 'checked' if filters.internet }}>
       <label class="form-check-label" for="f-net">Internet-facing</label>

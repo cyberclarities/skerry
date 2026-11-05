@@ -90,6 +90,15 @@ def create_app(config_class=Config):
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         return response
 
+    # The daily register snapshot: the first request of each day takes it,
+    # Docker's health check included. See app/snapshots.py.
+    @app.before_request
+    def daily_snapshot():
+        if request.endpoint == "static":
+            return
+        from .snapshots import ensure_today
+        ensure_today()
+
     # Health endpoint (no auth)
     @app.route("/health")
     def health():

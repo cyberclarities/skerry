@@ -134,21 +134,9 @@ def notify_review_due(risk, base_url: str):
     _send(recipients, f"[Skerry] Review Due: {risk.risk_id}", body)
 
 
-REVIEW_INTERVAL_DAYS = {"Monthly": 30, "Quarterly": 90, "Annually": 365}
-
-
-def review_due(risk, today):
-    """True when a risk is within 7 days of (or past) its next review.
-
-    A risk that has never been reviewed counts from the day it was
-    identified, so it is not silently exempt from reminders.
-    """
-    from datetime import timedelta
-    freq_days = REVIEW_INTERVAL_DAYS.get(risk.review_frequency or "", 0)
-    anchor = risk.last_reviewed or risk.date_identified
-    if not freq_days or not anchor:
-        return False
-    return today >= anchor + timedelta(days=freq_days) - timedelta(days=7)
+# The review rule lives in app/assurance.py, shared with the dashboard and
+# the Reviews Due report, so a reminder and the dashboard always agree.
+from app.assurance import REVIEW_INTERVAL_DAYS, review_due  # noqa: E402,F401
 
 
 def run_daily_notifications(app):

@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Reviews Due · Skerry{% endblock %}
+{% block breadcrumb %}Reports &rsaquo; Reviews Due{% endblock %}
+
+{% block content %}
+<h5 class="fw-bold mb-1">Reviews Due</h5>
+<p class="text-muted small mb-3" style="max-width:62rem">
+  A risk is due for review its review frequency after its last review: {% for f, d in intervals.items() %}{{ f }} every {{ d }} days{{ ", " if not loop.last else "." }}{% endfor %}
+  An acceptance sign-off counts as a review. A risk never reviewed counts from the day it was identified.
+  {% if no_frequency %}{{ no_frequency }} active risk{{ "s have" if no_frequency != 1 else " has" }} no review frequency set, so {{ "they never come" if no_frequency != 1 else "it never comes" }} due.{% endif %}
+</p>
+
+<h6 class="fw-semibold mt-3" id="past-due">Past due ({{ past_due|length }})</h6>
+<div class="card shadow-sm mb-4">
+  <div class="card-body p-0">
+    <table class="table table-hover table-sm small mb-0">
+      <thead>
+        <tr><th>Risk ID</th><th>Threat (Summary)</th><th>Owner</th><th>Frequency</th>
+            <th>Last reviewed</th><th>Was due</th><th>Days past due</th><th>RAG</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        {% for r, due, days in past_due %}
+        <tr>
+          <td><a href="{{ url_for('risks.detail', risk_pk=r.id) }}" class="fw-semibold text-decoration-none">{{ r.risk_id }}</a></td>
+          <td class="text-truncate" style="max-width:240px;" title="{{ r.threat_description }}">{{ (r.threat_description or "—")[:70] }}</td>
+          <td>{{ r.risk_owner or "—" }}</td>
+          <td>{{ r.review_frequency }}</td>
+          <td>{{ r.last_reviewed.strftime('%Y-%m-%d') if r.last_reviewed else "Never" }}</td>
+          <td>{{ due.strftime('%Y-%m-%d') }}</td>
+          <td class="fw-bold text-danger">{{ days }}</td>
+          <td><span class="badge badge-rag-{{ r.rag_status }}">{{ r.rag_status }}</span></td>
+          <td>{{ r.status }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" class="text-center text-muted py-3">No reviews past due.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<h6 class="fw-semibold" id="acceptances">Acceptances due in the next {{ window }} days ({{ acceptances|length }})</h6>
+<p class="text-muted small mb-2">
+  Accepted risks whose next review is within {{ window }} days or already past, and accepted risks with no
+  review frequency. An acceptance with no review date never expires on its own.
+</p>
+<div class="card shadow-sm">
+  <div class="card-body p-0">
+    <table class="table table-hover table-sm small mb-0">
+      <thead>
+        <tr><th>Risk ID</th><th>Threat (Summary)</th><th>Owner</th><th>Signed off by</th>
+            <th>Signed off</th><th>Next review</th><th>When</th><th>RAG</th></tr>
+      </thead>
+      <tbody>
+        {% for r, due, note in acceptances %}
+        <tr>
+          <td><a href="{{ url_for('risks.detail', risk_pk=r.id) }}" class="fw-semibold text-decoration-none">{{ r.risk_id }}</a></td>
+          <td class="text-truncate" style="max-width:240px;" title="{{ r.threat_description }}">{{ (r.threat_description or "—")[:70] }}</td>
+          <td>{{ r.risk_owner or "—" }}</td>
+          <td>{{ r.acceptance_sign_off_by or "Not recorded" }}</td>
+          <td>{{ r.acceptance_sign_off_date.strftime('%Y-%m-%d') if r.acceptance_sign_off_date else "Not recorded" }}</td>
+          <td>{{ due.strftime('%Y-%m-%d') if due else "Not set" }}</td>
+          <td class="{{ 'text-danger fw-semibold' if note.startswith('Past') or not due }}">{{ note }}</td>
+          <td><span class="badge badge-rag-{{ r.rag_status }}">{{ r.rag_status }}</span></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="text-center text-muted py-3">No acceptances due in the next {{ window }} days.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,6 +1,10 @@
-from flask import Blueprint, render_template
+from datetime import date
+
+from flask import Blueprint, current_app, render_template, request
 from flask_login import login_required
+from app import assurance
 from app.models import Risk, TrendLog, NISTCSFReference
+from app.scoring import CONTROL_EFFECTIVENESS_LABELS
 
 reports_bp = Blueprint("reports", __name__, url_prefix="/reports")
 
@@ -96,4 +100,53 @@ def csf_coverage():
         category_stats=category_stats,
         nist_functions=NIST_FUNCTIONS,
         unmapped=unmapped,
+    )
+
+
+def _thresholds():
+    return (current_app.config.get("RAG_RED_THRESHOLD", 15),
+            current_app.config.get("RAG_AMBER_THRESHOLD", 9))
+
+
+@reports_bp.route("/controls")
+@login_required
+def controls():
+    """Control Assurance: risks whose residual score leans on controls that
+    were never tested, were last tested over a year ago, or failed."""
+    today = date.today()
+    red_t, amber_t = _thresholds()
+    risks = Risk.query.all()
+    rows = assurance.unproven_controls(risks, today, red_t, amber_t)
+    red_only = request.args.get("basis") == "red"
+    shown = [r for r in rows if r["inherent_rag"] == "RED"] if red_only else rows
+    active = [r for r in risks if assurance.is_active(r)]
+    states = [assurance.control_assurance(r, today) for r in active]
+    return render_template(
+        "reports/controls.html",
+        rows=shown,
+        red_only=red_only,
+        all_count=len(rows),
+        red_count=sum(1 for r in rows if r["inherent_rag"] == "RED"),
+        tested_count=states.count(assurance.TESTED),
+        no_claim_count=states.count(None),
+        stale_days=assurance.STALE_TEST_DAYS,
+        effectiveness_labels=CONTROL_EFFECTIVENESS_LABELS,
+    )
+
+
+@reports_bp.route("/reviews")
+@login_required
+def reviews():
+    """Reviews Due: risks past their review date, and accepted risks due for
+    another look in the next 30 days."""
+    today = date.today()
+    risks = Risk.query.all()
+    return render_template(
+        "reports/reviews.html",
+        past_due=assurance.reviews_past_due(risks, today),
+        acceptances=assurance.acceptances_due(risks, today),
+        window=assurance.ACCEPTANCE_WINDOW_DAYS,
+        no_frequency=sum(1 for r in risks
+                         if assurance.is_active(r) and not r.review_frequency),
+        intervals=assurance.REVIEW_INTERVAL_DAYS,
     )
