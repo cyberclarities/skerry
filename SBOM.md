@@ -5,9 +5,9 @@
 **Data License:** CC0-1.0
 **Document Namespace:** skerry-sbom-v4
 **Document Created:** 2026-07-08
-**Document Updated:** 2026-10-16
+**Document Updated:** 2026-11-09
 **Creator:** Organization: CyberClarities
-**Creator Tool:** pip install --dry-run --python-version 3.12 --report, plus distribution metadata
+**Creator Tool:** `uv pip compile --universal --python-version 3.12 --generate-hashes` (requirements.lock), plus distribution metadata from PyPI
 
 ---
 
@@ -31,17 +31,17 @@
 | Field | Value |
 |---|---|
 | **PackageName** | skerry |
-| **PackageVersion** | 1.7.4 |
+| **PackageVersion** | 1.8 |
 | **PackageSupplier** | Organization: CyberClarities |
 | **PackageHomePage** | internal |
 | **PackageLicenseDeclared** | MIT |
 | **PackageLicenseConcluded** | MIT |
 | **FilesAnalyzed** | true |
 | **PrimaryLanguage** | Python 3.12 |
-| **Runtime** | Gunicorn 22 / Flask 3.1 |
+| **Runtime** | Gunicorn 26 / Flask 3.1 |
 | **Database** | SQLite 3 (embedded in Python stdlib) |
 | **Containerization** | Docker Compose 2.x |
-| **Reverse Proxy** | Caddy (caddy:alpine) |
+| **Reverse Proxy** | Caddy 2.11 (caddy:2.11-alpine) |
 
 **Application components:**
 
@@ -69,6 +69,7 @@
 | app/static/ | Brand assets | Favicon set, touch and PWA icons, and the Skerry mark (SVG) |
 | scripts/build_exec_summary_template.py | Build script | Generates the one-page Risk Action Request .docx template consumed by docxtpl |
 | scripts/build_supporting_evidence_template.py | Build script | Generates the Supporting Evidence .docx template consumed by docxtpl |
+| scripts/upgrade.sh | Host script | Backs up, rebuilds on fresh base images, verifies, and rolls back an install. Runs on the Docker host; not in the image |
 | docker-entrypoint.sh | Container entrypoint | Gives `/app/data` to the app user, then drops from root before Gunicorn starts |
 | run.py | Entrypoint | Gunicorn WSGI entrypoint |
 
@@ -76,137 +77,101 @@
 
 ## 2. Container Images
 
-| SPDXID | PackageName | Version | Supplier | License | Source |
-|---|---|---|---|---|---|
-| SPDXRef-img-python | python | 3.12-alpine | Docker Official Images | PSF-2.0 | hub.docker.com/_/python |
-| SPDXRef-img-caddy | caddy | latest (alpine tag) | Caddy Maintainers | Apache-2.0 | hub.docker.com/_/caddy |
+| SPDXID | PackageName | Tag | Resolved on 2026-11-09 | Supplier | License | Source |
+|---|---|---|---|---|---|---|
+| SPDXRef-img-python | python | 3.12-alpine3.24 | Python 3.12.16 on Alpine 3.24 | Docker Official Images | PSF-2.0 | hub.docker.com/_/python |
+| SPDXRef-img-caddy | caddy | 2.11-alpine | Caddy 2.11.9 on Alpine 3.24 | Caddy Maintainers | Apache-2.0 | hub.docker.com/_/caddy |
 
-> **Note:** `caddy:alpine` resolves to the latest stable Caddy release on Alpine Linux at pull time. For reproducible builds, pin to a digest: `caddy@sha256:<digest>`.
+Both tags pin the minor release and move on patch rebuilds, so `--pull` brings Python
+3.12.x, Caddy 2.11.x, and Alpine 3.24 security fixes. The resolved column comes from the
+`docker-library/official-images` manifests. For what a given host is actually running,
+`scripts/upgrade.sh` writes it to `state-after.txt` on every run. For a fully reproducible
+image, pin by digest: `python@sha256:<digest>`.
 
 **Alpine Linux base** (inherited by both images):
 
 | Package | Version | License |
 |---|---|---|
-| Alpine Linux | 3.21.x | MIT |
-| musl libc | 1.2.x | MIT |
-| BusyBox | 1.37.x | GPL-2.0 |
-| OpenSSL | 3.x | Apache-2.0 |
+| Alpine Linux | 3.24.x | MIT |
+| musl libc | per Alpine 3.24 | MIT |
+| BusyBox | per Alpine 3.24 | GPL-2.0 |
+| OpenSSL | per Alpine 3.24 | Apache-2.0 |
+
+Exact versions of the base packages were not verified for this update; the Alpine
+package index was not reachable. On a built image, `docker compose exec web apk info -v`
+lists them.
 
 ---
 
 ## 3. Direct Python Dependencies
 
-The 16 packages declared in `requirements.txt`.
+The 17 packages pinned in `requirements.txt`.
 
 | SPDXID | PackageName | Version | License | Purpose |
 |---|---|---|---|---|
 | SPDXRef-flask | Flask | 3.1.3 | BSD-3-Clause | Web framework |
 | SPDXRef-flask-sqlalchemy | Flask-SQLAlchemy | 3.1.1 | BSD-3-Clause | ORM integration |
 | SPDXRef-flask-login | Flask-Login | 0.6.3 | MIT | Session / auth management |
-| SPDXRef-flask-wtf | Flask-WTF | 1.2.2 | BSD-3-Clause | CSRF protection, form rendering |
-| SPDXRef-flask-limiter | Flask-Limiter | 3.8.0 | MIT | Failed-login rate limiting on POST /login |
-| SPDXRef-wtforms | WTForms | 3.2.1 | BSD-3-Clause | Form validation |
-| SPDXRef-sqlalchemy | SQLAlchemy | 2.0.36 | MIT | ORM / database abstraction |
+| SPDXRef-flask-wtf | Flask-WTF | 1.3.0 | BSD-3-Clause | CSRF protection, form rendering |
+| SPDXRef-flask-limiter | Flask-Limiter | 4.1.1 | MIT | Failed-login rate limiting on POST /login |
+| SPDXRef-wtforms | WTForms | 3.3.2 | BSD-3-Clause | Form validation |
+| SPDXRef-sqlalchemy | SQLAlchemy | 2.0.57 | MIT | ORM / database abstraction |
 | SPDXRef-werkzeug | Werkzeug | 3.1.9 | BSD-3-Clause | WSGI utilities, ProxyFix middleware |
-| SPDXRef-authlib | Authlib | 1.9.1 | BSD-3-Clause | OIDC / OAuth2 client (Azure AD SSO) |
-| SPDXRef-requests | requests | 2.33.0 | Apache-2.0 | HTTP client (OIDC discovery) |
+| SPDXRef-authlib | Authlib | 1.9.5 | BSD-3-Clause | OIDC / OAuth2 client (Entra ID SSO) |
+| SPDXRef-requests | requests | 2.34.2 | Apache-2.0 | HTTP client (OIDC discovery, Falcon API) |
 | SPDXRef-openpyxl | openpyxl | 3.1.5 | MIT | Excel (.xlsx) export |
-| SPDXRef-docxtpl | docxtpl | 0.19.1 | LGPL-2.1 | Word (.docx) rendering for the Risk Action Request |
-| SPDXRef-apscheduler | APScheduler | 3.10.4 | MIT | Background scheduler (daily email notifications) |
-| SPDXRef-python-dotenv | python-dotenv | 1.2.2 | BSD-3-Clause | .env file loading |
-| SPDXRef-email-validator | email-validator | 2.2.0 | Unlicense | Email address validation |
-| SPDXRef-gunicorn | gunicorn | 22.0.0 | MIT | WSGI HTTP server |
+| SPDXRef-docxtpl | docxtpl | 0.20.2 | LGPL-2.1 | Word (.docx) rendering for the Risk Action Request |
+| SPDXRef-apscheduler | APScheduler | 3.11.3 | MIT | Background scheduler (daily email, snapshot, Spotlight sync) |
+| SPDXRef-python-dotenv | python-dotenv | 1.2.4 | BSD-3-Clause | .env file loading |
+| SPDXRef-email-validator | email-validator | 2.3.0 | Unlicense | Email address validation |
+| SPDXRef-dnspython | dnspython | 2.9.2 | ISC | DNS for email-validator; pinned directly (CVE-2026-114605 floor) |
+| SPDXRef-gunicorn | gunicorn | 26.2.0 | MIT | WSGI HTTP server |
 
 ---
 
 ## 4. Transitive Python Dependencies
 
-The 32 packages pip installs to satisfy the direct dependencies above —
-48 in total. Versions are the resolution for Python 3.12 on
-2026-08-11; licences are read from each distribution's own metadata.
+The 24 packages pulled in by the direct dependencies above, 41 in total on Linux.
+Generated from `requirements.lock`, which pins every package with hashes; the image
+installs it with `pip install --require-hashes`, so this table is what a rebuild installs,
+not a snapshot that drifts. Licenses are each distribution's own metadata, with "BSD
+License" read as BSD-3-Clause.
 
-Version pinning applies to `requirements.txt` only, so a rebuild resolves transitive
-versions afresh. Treat the versions in this section as the state on the document date,
-not as a lock. If you need reproducibility, generate a hash-pinned lock file and say so
-here.
-
-### 4.1 Flask ecosystem
+`requirements.lock` also lists tzdata 2026.6 (Apache-2.0), required by tzlocal on Windows
+only. It is not installed in the image and is not counted here.
 
 | PackageName | Version | License | Required By |
 |---|---|---|---|
-| Jinja2 | 3.1.6 | BSD-3-Clause | Flask; docxtpl |
-| MarkupSafe | 3.0.3 | BSD-3-Clause | Jinja2 |
-| itsdangerous | 2.2.0 | BSD-3-Clause | Flask (sessions) |
-| click | 8.4.2 | BSD-3-Clause | Flask (CLI) |
-| blinker | 1.9.0 | MIT | Flask (signals) |
-| greenlet | 3.5.5 | MIT AND PSF-2.0 | SQLAlchemy |
-
-### 4.2 Flask-Limiter
-
-| PackageName | Version | License | Required By |
-|---|---|---|---|
-| limits | 5.8.0 | MIT | Flask-Limiter (storage backends, rate parsing) |
+| blinker | 1.9.0 | MIT | Flask |
+| certifi | 2026.10.23 | MPL-2.0 | requests |
+| cffi | 2.1.1 | MIT-0 | cryptography (on CPython) |
+| charset-normalizer | 3.5.2 | MIT | requests |
+| click | 8.5.1 | BSD-3-Clause | Flask |
+| cryptography | 50.0.2 | Apache-2.0 OR BSD-3-Clause | Authlib; joserfc |
+| Deprecated | 3.0.1 | MIT | limits |
+| et-xmlfile | 2.0.0 | MIT | openpyxl |
+| greenlet | 3.5.6 | MIT AND PSF-2.0 | SQLAlchemy |
+| idna | 3.20 | BSD-3-Clause | email-validator; requests |
+| itsdangerous | 2.2.0 | BSD-3-Clause | Flask; Flask-WTF |
+| Jinja2 | 3.1.6 | BSD-3-Clause | docxtpl; Flask |
+| joserfc | 1.8.0 | BSD-3-Clause | Authlib |
+| limits | 5.8.0 | MIT | Flask-Limiter |
+| lxml | 6.1.3 | BSD-3-Clause | docxtpl; python-docx |
+| MarkupSafe | 3.0.4 | BSD-3-Clause | Flask; Jinja2; Werkzeug; WTForms |
 | ordered-set | 4.1.0 | MIT | Flask-Limiter |
-| rich | 13.9.4 | MIT | Flask-Limiter (console output) |
-| markdown-it-py | 4.2.0 | MIT | rich |
-| mdurl | 0.1.2 | MIT | markdown-it-py |
-| Pygments | 2.20.0 | BSD-2-Clause | rich |
-| Deprecated | 1.3.1 | MIT | limits |
-| wrapt | 2.3.0 | BSD-2-Clause | Deprecated |
 | packaging | 26.3 | Apache-2.0 OR BSD-2-Clause | limits |
-
-### 4.3 Authlib / OIDC
-
-| PackageName | Version | License | Required By |
-|---|---|---|---|
-| cryptography | 50.0.0 | Apache-2.0 OR BSD-3-Clause | Authlib (TLS / JWK) |
-| cffi | 2.1.1 | MIT-0 | cryptography |
-| pycparser | 3.0 | BSD-3-Clause | cffi |
-
-### 4.4 requests
-
-| PackageName | Version | License | Required By |
-|---|---|---|---|
-| certifi | 2026.7.22 | MPL-2.0 | requests (CA bundle) |
-| charset-normalizer | 3.4.9 | MIT | requests |
-| idna | 3.18 | BSD-3-Clause | requests; email-validator |
-| urllib3 | 2.7.0 | MIT | requests |
-
-### 4.5 docxtpl
-
-| PackageName | Version | License | Required By |
-|---|---|---|---|
-| python-docx | 1.2.0 | MIT | docxtpl (.docx read/write) |
-| docxcompose | 2.2.0 | MIT | docxtpl (subdocument composition) |
-| lxml | 6.1.1 | BSD-3-Clause | docxtpl; python-docx; docxcompose |
-| babel | 2.18.0 | BSD-3-Clause | docxcompose (i18n utilities) |
-| typing_extensions | 4.16.0 | PSF-2.0 | python-docx; SQLAlchemy; Flask-Limiter |
-
-### 4.6 openpyxl
-
-| PackageName | Version | License | Required By |
-|---|---|---|---|
-| et_xmlfile | 2.0.0 | MIT | openpyxl |
-
-### 4.7 APScheduler
-
-| PackageName | Version | License | Required By |
-|---|---|---|---|
-| pytz | 2026.3.post1 | MIT | APScheduler (timezone handling) |
-| tzlocal | 5.4.4 | MIT | APScheduler |
-| six | 1.17.0 | MIT | APScheduler |
-
-### 4.8 email-validator
-
-| PackageName | Version | License | Required By |
-|---|---|---|---|
-| dnspython | 2.9.0 | ISC | email-validator (pinned directly in requirements.txt) |
+| pycparser | 3.12 | BSD-3-Clause | cffi (on CPython) |
+| python-docx | 1.2.0 | MIT | docxtpl |
+| typing-extensions | 4.16.0 | PSF-2.0 | Flask-Limiter; limits; python-docx; SQLAlchemy |
+| tzlocal | 5.4.5 | MIT | APScheduler |
+| urllib3 | 2.8.0 | MIT | requests |
+| wrapt | 2.5.2 | BSD-2-Clause | Deprecated |
 
 ---
 
 ## 5. Alpine Linux System Libraries
 
-Installed via `apk add` in the `web` container Dockerfile.
+Installed via `apk add` in the `web` container Dockerfile, from the Alpine 3.24 branch.
 
 | PackageName | Alpine Package | License | Purpose |
 |---|---|---|---|
@@ -214,17 +179,19 @@ Installed via `apk add` in the `web` container Dockerfile.
 | curl | curl | curl | Health check probe in docker-compose |
 | su-exec | su-exec | MIT | Lets the entrypoint drop from root to the app user |
 
-> **Version note:** Alpine package versions resolve at image build time from the Alpine
-> package index. To lock them, use `apk add libffi=<version>` and commit the exact
-> version string to the Dockerfile.
+> **Version note:** Alpine package versions resolve at image build time from the pinned
+> Alpine branch, so they track that branch's security updates. That is intended.
 
 **Build-time only (removed after pip install):**
 
 | PackageName | Alpine Package | License | Purpose |
 |---|---|---|---|
-| GCC | gcc | GPL-3.0 | C compiler for cffi / cryptography wheels |
+| GCC | gcc | GPL-3.0 | C compiler, used only if a package has no prebuilt wheel |
 | musl-dev | musl-dev | MIT | C headers |
 | libffi-dev | libffi-dev | MIT | FFI headers |
+
+Every package in `requirements.lock` has a prebuilt musllinux wheel for x86_64 and aarch64
+(checked 2026-11-09), so the compiler is not used on a normal build.
 
 ---
 
@@ -235,17 +202,20 @@ internet access from the client browser.
 
 | PackageName | Version | License | CDN URL | Purpose |
 |---|---|---|---|---|
-| Bootstrap | 5.3.3 | MIT | cdn.jsdelivr.net/npm/bootstrap@5.3.3 | UI framework |
-| Bootstrap Icons | 1.11.3 | MIT | cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3 | Icon font |
-| Chart.js | 4.4.4 | MIT | cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.js | Dashboard charts |
+| Bootstrap | 5.3.8 | MIT | cdn.jsdelivr.net/npm/bootstrap@5.3.8 | UI framework |
+| Bootstrap Icons | 1.13.2 | MIT | cdn.jsdelivr.net/npm/bootstrap-icons@1.13.2 | Icon font |
+| Chart.js | 4.6.1 | MIT | cdn.jsdelivr.net/npm/chart.js@4.6.1/dist/chart.umd.js | Dashboard charts |
 | htmx | 1.9.12 | BSD-2-Clause | cdn.jsdelivr.net/npm/htmx.org@1.9.12/dist/htmx.min.js | Partial-page updates |
 
 > **Integrity note:** Every tag carries an `integrity="sha384-..."` hash and
 > `crossorigin="anonymous"`, so a modified file is refused by the browser. The hashes
-> were computed from the npm package of each version (`npm pack`); the Bootstrap and
-> htmx values match the ones those projects publish. A version bump needs new hashes.
+> were computed from the npm package of each version (`npm pack`); the Bootstrap values
+> match the ones Bootstrap publishes. A version bump needs new hashes.
 > The pages still depend on the CDN being reachable; for air-gapped deployments, vendor
 > the files under `app/static/vendor/` and update the tags.
+
+htmx 1.9.12 is the last 1.x release (April 2024); 2.x is current. The move is tracked
+separately because it changes page behavior.
 
 ---
 
@@ -262,14 +232,14 @@ internet access from the client browser.
 
 ## 8. License Summary
 
-Counted across every component listed in this document — 67 in total.
+Counted across every component listed in this document — 61 in total.
 
 | License | Count |
 |---|---|
-| MIT | 31 |
+| MIT | 26 |
 | BSD-3-Clause | 15 |
 | Apache-2.0 | 3 |
-| BSD-2-Clause | 3 |
+| BSD-2-Clause | 2 |
 | PSF-2.0 | 2 |
 | Public Domain | 2 |
 | Apache-2.0 OR BSD-2-Clause | 1 |
@@ -297,8 +267,10 @@ expression their own metadata declares.
 
 ## 9. Known Vulnerability Notes
 
-This document is a point-in-time reference, not a scan result. Run a current scan against
-the deployed image before each production release.
+This document is a point-in-time reference, not a scan result. On 2026-11-09, `pip-audit`
+against `requirements.lock` and `npm audit` against the four front-end packages reported
+no known vulnerabilities. Run a current scan against the deployed image before each
+production release.
 
 **Recommended tools:**
 
@@ -307,19 +279,22 @@ the deployed image before each production release.
 - `syft` — machine-readable SPDX or CycloneDX SBOM from the live image
 
 ```bash
-# Scan Python dependencies
-pip-audit -r requirements.txt
+# Scan Python dependencies (every pinned package, transitive ones included)
+pip-audit -r requirements.lock --disable-pip --no-deps
 
-# Scan container image (requires Docker)
-trivy image risk-register-web:latest
+# Scan the container image (requires Docker)
+trivy image skerry-web:latest
 
 # Generate a machine-readable SBOM from the live image
-syft risk-register-web:latest -o spdx-json > sbom.spdx.json
+syft skerry-web:latest -o spdx-json > sbom.spdx.json
 ```
 
-> The image tag is still `risk-register-web` because Compose derives it from the project
-> directory, which keeps its original name so the existing named volumes — and Caddy's
-> issued certificates — survive. The application is Skerry; the image tag is a path.
+> Compose names the image after the install folder: `skerry-web` for a folder named
+> `skerry`. `docker compose images` shows the exact name.
+
+The advisory feed can lag a release. Authlib's four security releases of 2026-11-01 to
+2026-11-05 were not in it when they shipped. Read the changelogs of anything on the
+sign-in path, not only the scanner output.
 
 **Front-end CVE tracking:** Bootstrap, Bootstrap Icons, Chart.js, and htmx load from CDN
 and are invisible to container image scanners. Track them separately.
@@ -338,8 +313,10 @@ and are invisible to container image scanners. Track them separately.
 | 2026-11-04 | The per-risk export was renamed from Decision / Acceptance Form to Risk Action Request; `app/decision_request.py` became `app/action_request.py`. No dependency change. |
 | 2026-11-04 | Application version set to 1.4, now shown in the app and kept in `app/version.py`. This replaces the 4.0 recorded here on 2026-08-11; the numbering restarts by the owner's decision, and `CHANGELOG.md` records each release from 1.4 on. |
 
+| 2026-11-04 to 2026-11-05 | Releases 1.5 through 1.7.4. No dependency change. |
+| 2026-11-09 | Release 1.8, from the 2026-11-06 dependency review. Authlib 1.9.5, gunicorn 26.2.0, dnspython 2.9.2, SQLAlchemy 2.0.57, Flask-Limiter 4.1.1, docxtpl 0.20.2, APScheduler 3.11.3, WTForms 3.3.2, Flask-WTF 1.3.0, requests 2.34.2, email-validator 2.3.0, python-dotenv 1.2.4. Eight packages left the image (rich, markdown-it-py, mdurl, Pygments, pytz, six, docxcompose, babel); joserfc, which Authlib needs, was missing and is added. Added `requirements.lock`; section 4 is now generated from it. Images pinned to `python:3.12-alpine3.24` and `caddy:2.11-alpine`; Alpine 3.21, recorded here before, is out of support. Bootstrap 5.3.8, Bootstrap Icons 1.13.2, Chart.js 4.6.1. Added `scripts/upgrade.sh`. The scan commands use the image name Compose gives a `skerry` folder. |
 ---
 
-*Regenerate after any dependency change, base image rebuild, or Alpine package version
-change. The versions in section 4 were resolved on 2026-08-11 and will drift on the next
-rebuild unless you pin them.*
+*Regenerate after any change to `requirements.txt`, `requirements.lock`, the image tags,
+or the CDN tags. Section 4 comes from `requirements.lock`; sections 2 and 5 resolve at
+build time within the pinned Alpine branch.*

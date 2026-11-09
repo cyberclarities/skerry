@@ -135,7 +135,7 @@ sudo cp "$B/risk_register.db" data/
 # Images, if the rollback tags still exist. `docker compose images` shows the
 # names Compose uses; skerry-web assumes the folder is named skerry.
 docker tag skerry-rollback/web:$STAMP skerry-web
-docker tag skerry-rollback/caddy:$STAMP caddy:alpine
+docker tag skerry-rollback/caddy:$STAMP caddy:2.11-alpine
 
 # Caddy's CA, only if the volume was lost.
 docker run --rm -v skerry_caddy_data:/data -v "$PWD/$B:/backup" alpine \
@@ -200,7 +200,7 @@ Run it once by hand before scheduling it; that creates `backups/`, where the cro
 
 When `requirements.txt`, the base images, or the CDN libraries change:
 
-1. Change the pins. Run the test suite under Python 3.12, the container's version.
+1. Change the pins in `requirements.txt` and regenerate `requirements.lock` with the command at the top of that file. Run the test suite under Python 3.12, the container's version.
 2. Bump the version and write the CHANGELOG entry, with its `### Upgrading` section (section 4).
 3. On a test host, or a copy of production, run `scripts/upgrade.sh` and confirm the summary shows what you meant to change.
 4. Regenerate `SBOM.md` from `pip-freeze-after.txt` and `state-after.txt` from that run. Those record what is actually in the image, not what the pins say.

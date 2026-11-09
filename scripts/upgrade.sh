@@ -365,7 +365,7 @@ upgrade_steps() {
             }
         }
         /^## /                    { flush(); up = 0; ver = $2; next }
-        /^### /                   { flush(); up = ($0 ~ /^### Upgrading/); next }
+        /^### /                   { flush(); up = ($0 ~ /^### Upgrading[[:space:]]*$/); next }
         up && /^- /               { flush(); cur = $0; next }
         up && /^  / && cur != ""  { sub(/^ +/, ""); cur = cur " " $0; next }
         END                       { flush() }

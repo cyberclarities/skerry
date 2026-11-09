@@ -1,9 +1,16 @@
-FROM python:3.12-alpine
+# Alpine release pinned so it changes on purpose and SBOM.md can name it.
+# A rebuild with --pull (scripts/upgrade.sh does this) still picks up patch
+# rebuilds of this tag: Python 3.12.x and Alpine 3.24 security fixes.
+FROM python:3.12-alpine3.24
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY requirements.lock .
 
+# requirements.lock pins every package, transitive ones included, with
+# hashes; pip refuses anything that does not match. Regenerate it from
+# requirements.txt (see the command at the top of that file).
+#
 # libffi is needed at runtime by cffi/cryptography (used via Authlib for
 # OIDC). curl backs the docker-compose healthcheck. su-exec lets the
 # entrypoint drop from root to the app user. Build-time deps (gcc, musl-dev,
@@ -17,7 +24,7 @@ RUN apk add --no-cache \
         gcc \
         musl-dev \
         libffi-dev \
-    && pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir --require-hashes -r requirements.lock \
     && apk del .build-deps
 
 COPY . .
@@ -36,4 +43,6 @@ ENTRYPOINT ["sh", "/app/docker-entrypoint.sh"]
 # worker. The Spotlight sync runs on a background thread, not in a request, so
 # it is not bound by this. 300s covers a large Excel export or database import.
 # One worker on purpose: the sync lock and the scheduler live in that process.
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-5000} --workers 1 --timeout ${GUNICORN_TIMEOUT:-300} 'run:app'"]
+# --no-control-socket: gunicorn 25.1 and later open a management socket under
+# $HOME by default. Skerry does not use it, and the app user has no home.
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-5000} --workers 1 --timeout ${GUNICORN_TIMEOUT:-300} --no-control-socket 'run:app'"]

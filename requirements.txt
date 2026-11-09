@@ -1,18 +1,27 @@
+# Direct dependencies. Edit pins here, then regenerate the lock the image
+# installs from:
+#
+#   uv pip compile requirements.txt --universal --python-version 3.12 \
+#       --generate-hashes -o requirements.lock
+#
+# The Dockerfile installs requirements.lock with --require-hashes, so every
+# package in the image, transitive ones included, is pinned and checked.
 flask==3.1.3
 flask-sqlalchemy==3.1.1
 flask-login==0.6.3
-flask-wtf==1.2.2
-flask-limiter==3.8.0
-wtforms==3.2.1
-sqlalchemy==2.0.36
+flask-wtf==1.3.0
+flask-limiter==4.1.1
+wtforms==3.3.2
+sqlalchemy==2.0.57
 werkzeug==3.1.9
-authlib==1.9.1
-requests==2.33.0
+authlib==1.9.5
+requests==2.34.2
 openpyxl==3.1.5
-docxtpl==0.19.1
-apscheduler==3.10.4
-python-dotenv==1.2.2
-email-validator==2.2.0
-# Transitive, via email-validator. Pinned because 2.8.0 carries CVE-2026-114605.
-dnspython==2.9.0
-gunicorn==22.0.0
+docxtpl==0.20.2
+apscheduler==3.11.3
+python-dotenv==1.2.4
+email-validator==2.3.0
+# Transitive, via email-validator. Pinned directly so the 2.9 floor for
+# CVE-2026-114605 cannot slip on a re-resolve.
+dnspython==2.9.2
+gunicorn==26.2.0

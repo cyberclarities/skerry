@@ -3,6 +3,51 @@
 Each release, newest first. The version shown under the logo in the app is
 kept in `app/version.py`; see that file for how to release a new one.
 
+## 1.8 (2026-11-09)
+
+### Upgrade script
+- **`scripts/upgrade.sh`** upgrades a running install in one step: backs up
+  the database, `.env`, and Caddy's CA; pulls the code; rebuilds on freshly
+  pulled base images; restarts; and checks that the new version is the one
+  answering. If the check fails, it puts the old version back. `--check`
+  shows what is waiting, and `--rollback` returns to an earlier run. See
+  **UPGRADE.md**.
+- Run it even with no new release. It is how Alpine, Python, and Caddy
+  security fixes reach a running install; a plain rebuild reuses the base
+  image cached on the first build.
+
+### Security
+- **Authlib 1.9.5.** Four security releases since 1.9.1. Three are in
+  authorization-server code Skerry does not run; the fourth is in the JOSE
+  code that checks Entra sign-in tokens.
+- **gunicorn 26.2.0**, from 22.0.0. Two years of HTTP parser hardening for
+  servers behind a proxy, which is how Skerry runs. Its new management
+  socket is turned off; Skerry does not use it.
+- **dnspython 2.9.2.** Fixes a resource exhaustion in zone file parsing.
+- **Base OS.** The web image is pinned to Python 3.12 on Alpine 3.24 and
+  Caddy to 2.11 on Alpine. Alpine 3.21, which earlier builds may still be
+  on, went out of support on 2026-11-01.
+- **Every package is pinned and hash-checked.** The image installs from the
+  new `requirements.lock`, so a rebuild can no longer pull a different
+  transitive package than the one tested.
+- **Backups stay out of git and the image.** `backups/` holds database
+  copies and a copy of `.env`; it was not excluded from either.
+
+### Dependencies
+- SQLAlchemy 2.0.57, Flask-Limiter 4.1.1, docxtpl 0.20.2, APScheduler
+  3.11.3, WTForms 3.3.2, Flask-WTF 1.3.0, requests 2.34.2, email-validator
+  2.3.0, python-dotenv 1.2.4.
+- Eight packages leave the image: rich, markdown-it-py, mdurl, Pygments,
+  pytz, six, docxcompose, and babel. 41 installed, down from 49.
+- Bootstrap 5.3.8, Bootstrap Icons 1.13.2, and Chart.js 4.6.1, with new
+  integrity hashes. htmx stays on 1.9.12 for now.
+- Running the tests locally now needs Python 3.11 or newer. The container
+  runs 3.12.
+
+### Upgrading
+- Rebuild: `scripts/upgrade.sh`, which pulls fresh base images. No settings
+  change.
+
 ## 1.7.4 (2026-11-04)
 
 ### Navigation

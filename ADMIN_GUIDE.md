@@ -1,7 +1,7 @@
 # Skerry Administrator Guide
 
-**Version:** 1.7.4  
-**Platform:** Flask 3.1 · Gunicorn 22 · Caddy · SQLite · Docker Compose  
+**Version:** 1.8  
+**Platform:** Flask 3.1 · Gunicorn 26 · Caddy 2.11 · SQLite · Docker Compose  
 **Audience:** IT administrators responsible for deployment, maintenance, and user access
 
 ---
@@ -39,7 +39,7 @@ Browser
    │ HTTPS :8443 (host port; see 2.3)
    ▼
 ┌──────────────────────────────────────────────┐
-│  caddy (caddy:alpine)                        │
+│  caddy (caddy:2.11-alpine)                   │
 │  • Listens on :443 → TLS termination         │
 │    (published on the host as :8443)          │
 │  • Sets X-Forwarded-Proto: https             │
@@ -139,7 +139,8 @@ skerry/
 ├── docker-compose.yml
 ├── docker-entrypoint.sh    Hands ./data to the app user, then drops root
 ├── Dockerfile
-├── requirements.txt
+├── requirements.txt        Direct dependencies; edit pins here
+├── requirements.lock       Every package, hash-pinned; what the image installs
 ├── run.py                  Application entrypoint for Gunicorn
 ├── .env.example            Template for your .env
 ├── CHANGELOG.md            What changed in each version, with upgrade steps
@@ -320,7 +321,7 @@ The first build takes a minute or two, mostly the Python dependency install. Sub
 Watch the output. When you see both of these, the platform is ready:
 
 ```
-web-1    | [INFO] Starting gunicorn 22.0.0
+web-1    | [INFO] Starting gunicorn 26.2.0
 web-1    | [INFO] Listening at: http://0.0.0.0:5000
 caddy-1  | {"level":"info","msg":"serving initial configuration"}
 ```

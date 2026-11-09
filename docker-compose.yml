@@ -13,7 +13,9 @@ services:
       retries: 3
 
   caddy:
-    image: caddy:alpine
+    # Minor version pinned so SBOM.md can name it; --pull still brings 2.11.x
+    # patch releases and Alpine fixes. Move to the next minor on purpose.
+    image: caddy:2.11-alpine
     ports:
       ##- "80:80"
       - "8443:443"

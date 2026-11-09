@@ -1,6 +1,6 @@
 # Skerry User Guide
 
-**Version:** 1.7.4  
+**Version:** 1.8  
 **Platform:** Skerry, at the address your administrator gives you  
 **Audience:** Everyone with an account: Viewer, Operator, and Admin
 
