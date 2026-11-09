@@ -7,6 +7,9 @@
 data/*
 !data/.gitkeep
 instance/
+
+# Upgrade backups: database copies and a copy of .env, with every secret in it.
+backups/
 *.db
 *.sqlite
 *.sqlite3

@@ -80,6 +80,7 @@ Set it back for anything anyone else can reach.
 |---|---|
 | [`SETUP.md`](SETUP.md) | Getting a first instance running |
 | [`ADMIN_GUIDE.md`](ADMIN_GUIDE.md) | Configuration, SSO, SMTP, backup and restore, user management |
+| [`UPGRADE.md`](UPGRADE.md) | Upgrading a running install, rolling back, and restoring |
 | [`USER_GUIDE.md`](USER_GUIDE.md) | Day-to-day use — creating risks, scoring, reviews, reports |
 | [`SBOM.md`](SBOM.md) | Software bill of materials, SPDX 2.3 |
 | [`SECURITY.md`](SECURITY.md) | Reporting a vulnerability, and the known limitations below |

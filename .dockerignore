@@ -10,6 +10,8 @@
 
 # Runtime data: the SQLite database, its backups, and import temp files
 data/
+# Upgrade backups: database copies and a copy of .env (scripts/upgrade.sh)
+backups/
 *.db
 *.db-*
 *.db.backup_*

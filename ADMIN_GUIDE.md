@@ -133,7 +133,7 @@ skerry/
 │   ├── decorators.py       Role enforcement decorators
 │   └── version.py          The version shown under the logo
 ├── data/                   Database volume mount point (start empty)
-├── scripts/                Builders for the Word templates
+├── scripts/                upgrade.sh, and builders for the Word templates
 ├── tests/                  Test suite (pytest)
 ├── Caddyfile               Caddy reverse proxy config
 ├── docker-compose.yml
@@ -144,6 +144,7 @@ skerry/
 ├── .env.example            Template for your .env
 ├── CHANGELOG.md            What changed in each version, with upgrade steps
 ├── SETUP.md                Quick-start card
+├── UPGRADE.md              Upgrading, rolling back, and restoring
 ├── SPOTLIGHT_INGEST.md     CrowdStrike Spotlight setup and behavior
 ├── USER_GUIDE.md           For people using the register
 ├── SECURITY.md · SBOM.md   Security notes and software bill of materials
@@ -692,7 +693,16 @@ find ./data -name "*.backup_*" -mtime +30 -delete
 
 ### 10.1 Updating the Application
 
-When a new version of the application code is available:
+Use the upgrade script. It backs up the database, `.env`, and Caddy's CA, pulls the new code, rebuilds on fresh base images, restarts, checks the new version, and rolls the images back if the check fails:
+
+```bash
+scripts/upgrade.sh --check     # what is running, what is waiting
+scripts/upgrade.sh
+```
+
+[`UPGRADE.md`](UPGRADE.md) covers what each step does, rolling back, and what to do if it stops. Running it with no new release still matters: it is how Alpine, Python, and Caddy security fixes reach a running install.
+
+To do it by hand instead:
 
 ```bash
 # Back up the database before any update (stack stopped, so cp is safe)
@@ -700,10 +710,14 @@ docker compose down
 mkdir -p ./backups
 cp ./data/risk_register.db ./backups/risk_register_pre_update_$(date +%Y%m%d).db
 
-# Pull new code (or re-extract the zip), then rebuild
+# Pull new code (or re-extract the zip), then rebuild on fresh base images
 git pull
-docker compose up --build -d
+docker compose build --pull
+docker compose pull caddy
+docker compose up -d
 ```
+
+`--pull` matters. Without it, Docker reuses the Python and Alpine base it cached on the first build, and the Caddy image is never refreshed. `./backups` is excluded from git and from the image build.
 
 The database schema is managed by SQLAlchemy's `db.create_all()` on startup. It creates tables that do not exist yet. It does not add columns to a table that already exists, and it never drops anything. A release that only adds tables upgrades on its own; a release that changes an existing table needs a migration step, and its release notes will say so. Restoring from the backup above is the rollback path.
 
