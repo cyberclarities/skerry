@@ -67,6 +67,14 @@ If your organization uses Azure AD single sign-on, click **Sign in with SSO** an
 
 You land on the Dashboard. The left sidebar shows navigation options based on your role. The **Reports** and **Admin** groups collapse: click the heading to fold or open one. Your browser remembers which you left closed, and a group always opens when you are on one of its pages. If you cannot see an option you expect, check for a collapsed group first; otherwise your role may not include that access. Ask your administrator.
 
+The version number under the logo is the release of Skerry you are on. Include it when you report a problem.
+
+### If Something Looks Wrong
+
+**The page looks plain, or icons and charts are missing.** Skerry's styling, icons, and charts load from an outside site, `cdn.jsdelivr.net`, and the browser checks each file before using it. If your network blocks that site, or a file arrives altered, the browser leaves it out. The register and everything in it are fine. But the page will look bare and the charts will not draw. Tell your administrator; it is a network setting, not a fault in the register.
+
+**"502 Bad Gateway" for a minute or so.** Skerry is restarting, usually for an upgrade. Wait a minute and reload. Anything already saved is safe. If you were in the middle of saving, open the record and check that your change is there.
+
 ---
 
 ## 2. The Dashboard
@@ -665,6 +673,10 @@ Navigate to **Admin → Settings → Database** tab.
 Click **Download .db file**. The database downloads as a timestamped file (`risk_register_YYYYMMDD_HHMMSS.db`). Do this regularly: at minimum weekly, more often if the register is actively updated.
 
 Store the file somewhere off the host: a network share, cloud storage, or your organization's backup system. A backup that lives only on the same server as the database is not a backup.
+
+### Upgrade Backups
+
+When Skerry is upgraded, the upgrade takes its own copy of the database on the server first. That copy exists to roll back an upgrade that goes wrong. It is not a substitute for downloading backups here. It lives on the same server, and it is only taken when someone upgrades.
 
 ### Importing a Database
 

@@ -32,7 +32,7 @@
 
 ## 1. Architecture
 
-Two containers, one network, no external dependencies.
+Two containers, one network. Nothing outside the host is needed to keep it running, with one exception: every page loads Bootstrap, Bootstrap Icons, Chart.js, and htmx from `cdn.jsdelivr.net`, so browsers must be able to reach it ([Section 2.1](#21-prerequisites)). SSO and the Spotlight sync reach Microsoft and CrowdStrike only when you turn them on.
 
 ```
 Browser
@@ -48,8 +48,8 @@ Browser
                │ HTTP :{PORT} (internal Docker network)
                ▼
 ┌──────────────────────────────────────────────┐
-│  web (python:3.12-alpine)                    │
-│  • Gunicorn WSGI server, 1 worker            │
+│  web (python:3.12-alpine3.24)                │
+│  • Gunicorn 26 WSGI server, 1 worker         │
 │  • Flask 3.1 application                     │
 │  • SQLite database at /app/data/             │
 │  • APScheduler: daily email, nightly         │
@@ -90,6 +90,9 @@ Install on the target host before proceeding:
 - Docker Compose v2 (`docker compose`, not `docker-compose`)
 - An inbound firewall rule permitting TCP 8443 (the shipped port; TCP 443, and 80 for the redirect, if you change it per [Section 2.3](#23-configure-hostname-and-port))
 - Your chosen hostname resolvable from client workstations, via DNS or a hosts file entry
+- Outbound HTTPS from the host to Docker Hub and PyPI, for the first build and every upgrade
+- Client browsers able to reach `cdn.jsdelivr.net`. The pages load their styling, icons, and charts from there, each file checked against an integrity hash. If your network blocks it, see [Section 11.8](#118-pages-look-unstyled-or-icons-and-charts-are-missing)
+- `curl` on the host. Optional; the upgrade script uses it to check the site through Caddy, the way a browser reaches it
 
 No Python, no database server, no build tools on the host. Everything runs inside the containers.
 
@@ -317,6 +320,8 @@ docker compose up --build
 ```
 
 The first build takes a minute or two, mostly the Python dependency install. Subsequent starts take seconds.
+
+The build installs from `requirements.lock`, which pins every package, dependencies of dependencies included, and checks each against its hash. A build on any host installs exactly what was tested. After this first start, upgrade with `scripts/upgrade.sh`, not by rebuilding by hand ([Section 10.1](#101-updating-the-application)).
 
 Watch the output. When you see both of these, the platform is ready:
 
@@ -642,6 +647,8 @@ docker run --rm \
 
 The volume is named after the install folder. `docker volume ls | grep caddy_data` shows the exact name.
 
+**Upgrade backups.** Every run of `scripts/upgrade.sh` writes a folder, `backups/upgrade_STAMP/`, holding the database, Caddy's CA, and `env.backup`, a copy of `.env` with every secret in it (mode 600). Those copies are what make a rollback possible. But they sit on the same host as what they protect, so they do not replace the off-host backups in this section. Copy them off the host on the same schedule, and clear old ones ([`UPGRADE.md`](UPGRADE.md), section 9). `backups/` is excluded from git and from the image build.
+
 ### 9.2 Manual Database Backup
 
 From the application: **Admin → Settings → Database → Download .db file**
@@ -782,10 +789,32 @@ Check available space on the host:
 df -h /opt/skerry
 du -sh /opt/skerry/data/
 du -sh /opt/skerry/data/backups/
+du -sh /opt/skerry/backups/
+docker image ls skerry-rollback/web
 docker system df
 ```
 
+Each upgrade adds a database copy under `backups/` and keeps the old images as rollback tags. Both grow with every run, monthly runs included. [`UPGRADE.md`](UPGRADE.md) section 9 shows how to clear them.
+
 The register itself stays small: several hundred risks with full audit history is a few megabytes. The Spotlight queue is what grows. Each finding keeps the full record CrowdStrike returned, so a large tenant can add hundreds of megabytes, and every backup is that size too. Narrowing `SPOTLIGHT_FQL_FILTER` and `SPOTLIGHT_SEVERITIES` is the lever; see `SPOTLIGHT_INGEST.md`. Watch the size after the first full sync and set backup retention to match.
+
+### 10.7 Security Updates and Dependencies
+
+Three layers move on their own schedules: the base images, the Python packages, and the browser libraries. None of them updates itself.
+
+**Base images.** The web image is pinned to `python:3.12-alpine3.24` and Caddy to `caddy:2.11-alpine`. Those tags take patch rebuilds, so a rebuild with `--pull` picks up Alpine, Python 3.12.x, and Caddy 2.11.x security fixes. Docker never re-pulls a base on its own; a container keeps whatever base it was built on, for as long as it runs. Run `scripts/upgrade.sh` once a month even when no release is waiting. [`UPGRADE.md`](UPGRADE.md) section 11 has a cron line that does it, and stops safely at any release that needs a person. Moving to the next Alpine release or Caddy minor is a change to the `Dockerfile` or `docker-compose.yml`, made on purpose in a release.
+
+**Python packages.** `requirements.txt` holds the 17 direct dependencies and is where versions change. `requirements.lock` pins those and everything they pull in, with hashes, and is what the image installs. To move a version: edit `requirements.txt`, regenerate the lock with the command at the top of that file, run the tests under Python 3.12, and release. Check for known vulnerabilities with:
+
+```bash
+pip-audit -r requirements.lock --disable-pip --no-deps
+```
+
+A clean scan is a floor, not a verdict. Advisories can trail a release by days; Authlib shipped four security releases in November 2026 before any of them reached the advisory feed. When anything on the sign-in path (Authlib, Flask, Werkzeug) ships a security release, read its changelog.
+
+**Browser libraries.** Pinned by version and integrity hash in the templates. Container scanners never see them, so they need their own check. A version change needs new hashes; `SBOM.md` section 6 says how they were made.
+
+**The record.** `SBOM.md` lists every component and version. Regenerate it in any release that changes one of these layers; `UPGRADE.md` section 12 has the order.
 
 ---
 
@@ -841,7 +870,7 @@ docker compose down && docker compose up -d
 
 ### 11.4 Browser Shows 502 Bad Gateway
 
-Caddy is running but cannot reach the `web` container. The `web` container may still be starting, or it may have crashed.
+Caddy is running but cannot reach the `web` container. The `web` container may still be starting, or it may have crashed. A 502 that lasts under a minute, right after an upgrade or a restart, is the `web` container starting; wait for `docker compose ps` to show it healthy before digging further.
 
 ```bash
 docker compose ps
@@ -920,6 +949,21 @@ s.quit()
 
 If emails are sending but specific risks are not generating notifications: the risk's Owner field does not match any active user's Full Name or email. Look for `Cannot resolve notification recipient` in the log; it names the value that failed. Case does not matter; spelling and middle initials do.
 
+### 11.8 Pages Look Unstyled, or Icons and Charts Are Missing
+
+Skerry answered, but the browser did not load Bootstrap, the icons, or Chart.js. The data is fine. The browser could not get a file from `cdn.jsdelivr.net`, or got one it refused to run.
+
+Open the browser's developer tools (F12) and look at the Console tab:
+
+- **A network or DNS error for `cdn.jsdelivr.net`.** The workstation, a proxy, or a content filter blocks it. Allow the host, or vendor the files into the app (`SBOM.md` section 6).
+- **"Failed to find a valid digest in the 'integrity' attribute".** The file that arrived does not match the hash in the template, so the browser blocked it. Do not remove the `integrity` attribute to make the message go away; that check is what stops a tampered file from running in every user's session. A proxy that rewrites or re-compresses files is the usual cause. If none is in the path, treat it as a problem with the CDN and report it.
+
+### 11.9 An Upgrade Stopped
+
+`scripts/upgrade.sh` says where it stopped and what state it left. [`UPGRADE.md`](UPGRADE.md) section 5 has the full table. Two things hold at every stop: the backups taken before it are in `backups/upgrade_STAMP/`, and unless the message says otherwise, the version that was running is still running. The run log is `backups/upgrade_STAMP/upgrade.log`.
+
+If it stopped for upgrade steps in the release notes, do them, then carry on with `scripts/upgrade.sh --no-pull`.
+
 ---
 
 ## 12. Migration to a New Host
@@ -968,6 +1012,8 @@ Start the new instance:
 ```bash
 docker compose up --build -d
 ```
+
+The new host builds from the same pinned base images and `requirements.lock` as the old one. If the old host has not been upgraded in a while, the new one will be ahead on base image patches; that is expected. Run `scripts/upgrade.sh --check` on both and compare.
 
 Verify it is healthy:
 
