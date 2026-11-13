@@ -16,6 +16,12 @@ with no separate migration step:
 delete_findings() removes rows an operator calls noise and remembers the
 host+CVE in SpotlightDeletion, so the next sync does not put them back. See
 that model for the "stay gone unless it reopens" rule.
+
+delete_hosts() is the same thing a whole host at a time, for systems that
+are no longer in CrowdStrike. Every finding goes through delete_findings(),
+so the same rule holds: while Spotlight keeps reporting a retired host's
+CVEs open they stay out, and once a full sync stops seeing them, a host that
+genuinely comes back returns to the queue as New.
 """
 
 import logging
@@ -25,7 +31,7 @@ from sqlalchemy import func, or_
 
 from ..models import db
 from ..models_spotlight import (INGEST_DISMISSED, INGEST_ELEVATED, INGEST_TRIAGED,
-                                SpotlightDeletion, SpotlightFinding)
+                                SpotlightDeletion, SpotlightFinding, SpotlightHost)
 from .ingest import DEFAULT_SEVERITIES, OPEN
 
 log = logging.getLogger(__name__)
@@ -136,6 +142,40 @@ def delete_findings(findings, user, reason=None):
                     getattr(user, "username", None) or getattr(user, "email", "?"),
                     len(deleted), f" ({reason})" if reason else "")
     return deleted, skipped
+
+
+def delete_hosts(aids, user, reason=None):
+    """Delete whole hosts and every finding on them. Returns a summary dict.
+
+    Findings attached to a risk are evidence and stay put. A host with any
+    such finding keeps its host row too, so the risk still has a system to
+    point at; only its unelevated findings go. Every other finding, in any
+    state (closed and dismissed included), is deleted and remembered.
+    """
+    summary = {"hosts": [], "findings": 0, "kept": []}
+    for aid in dict.fromkeys(a for a in aids if a):  # dedupe, keep order
+        host = SpotlightHost.query.filter_by(aid=aid).first()
+        query = SpotlightFinding.query.filter(SpotlightFinding.aid == aid)
+        if host is not None:
+            query = SpotlightFinding.query.filter(or_(
+                SpotlightFinding.aid == aid, SpotlightFinding.host_id == host.id))
+        deleted, skipped = delete_findings(query.all(), user, reason)
+        summary["findings"] += len(deleted)
+        name = (host.display_name if host else None) or (
+            deleted[0].hostname if deleted else None) or aid
+        if skipped:
+            summary["kept"].append(name)
+            continue
+        if host is not None:
+            db.session.flush()  # findings first, so the host cascade finds none
+            db.session.delete(host)
+        summary["hosts"].append(name)
+    if summary["hosts"]:
+        log.warning("Spotlight: %s deleted %s host(s) and %s finding(s)%s.",
+                    getattr(user, "username", None) or getattr(user, "email", "?"),
+                    len(summary["hosts"]), summary["findings"],
+                    f" ({reason})" if reason else "")
+    return summary
 
 
 def restore_deletion(deletion):

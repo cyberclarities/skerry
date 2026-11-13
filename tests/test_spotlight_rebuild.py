@@ -595,3 +595,129 @@ def test_hosts_counter_skips_hosts_whose_findings_are_all_suppressed(app, monkey
         SpotlightFinding.query.filter_by(aid=other).update({"is_suppressed": True})
         db.session.commit()
         assert _totals()["hosts"] == 1
+
+
+# ── Deleting whole hosts that are gone from CrowdStrike ─────────────────────
+OLD_AID, LIVE_AID = "retired0000aid", "live11111111aid"
+
+
+def _host_rec(n, aid, hostname, last_seen, cve=CVE):
+    r = rec(n, aid=aid, cve=cve)
+    r["host_info"] = dict(r["host_info"], hostname=hostname, last_seen_timestamp=last_seen)
+    return r
+
+
+def _two_hosts():
+    """A retired host with two CVEs, and a live one that checked in today."""
+    from datetime import datetime, timezone
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return [_host_rec(1, OLD_AID, "SKY-OLD01", "2026-01-05T00:00:00Z"),
+            _host_rec(2, OLD_AID, "SKY-OLD01", "2026-01-05T00:00:00Z", cve="CVE-2099-0002"),
+            _host_rec(3, LIVE_AID, "SKY-LIVE01", today)]
+
+
+def _delete_hosts_via_ui(app, aids, username="admin", password=ADMIN_PW, **extra):
+    c = app.test_client()
+    _login(c, username, password)
+    return c.post("/ingest/hosts/delete",
+                  data={"aids": aids, "reason": "No longer in CrowdStrike",
+                        "back": "/ingest/?", **extra}, follow_redirects=True)
+
+
+def test_stale_filter_finds_hosts_falcon_has_not_seen(app, monkeypatch):
+    sync(app, monkeypatch, _two_hosts())
+    c = app.test_client()
+    _login(c)
+    page = c.get("/ingest/?stale=30").get_data(as_text=True)
+    assert "SKY-OLD01" in page and "SKY-LIVE01" not in page
+    every = c.get("/ingest/").get_data(as_text=True)
+    assert "SKY-OLD01" in every and "SKY-LIVE01" in every
+    assert 'name="aids"' in every and "Last seen" in every and "Delete selected hosts" in every
+
+
+def test_host_delete_lifecycle(app, monkeypatch):
+    from app.models_spotlight import SpotlightDeletion, SpotlightFinding, SpotlightHost
+    sync(app, monkeypatch, _two_hosts())
+    resp = _delete_hosts_via_ui(app, [OLD_AID])
+    assert b"1 host(s) deleted with 2 finding(s)" in resp.data
+    with app.app_context():
+        assert SpotlightHost.query.filter_by(aid=OLD_AID).first() is None
+        assert SpotlightFinding.query.filter_by(aid=OLD_AID).count() == 0
+        assert SpotlightDeletion.query.filter_by(aid=OLD_AID).count() == 2
+        assert SpotlightFinding.query.filter_by(aid=LIVE_AID).count() == 1, "only the chosen host"
+
+    # Spotlight still carries the retired host: it stays out, host row too.
+    sync(app, monkeypatch, _two_hosts())
+    with app.app_context():
+        assert SpotlightHost.query.filter_by(aid=OLD_AID).first() is None
+        assert SpotlightFinding.query.filter_by(aid=OLD_AID).count() == 0
+
+    # A complete sync without it: CrowdStrike has dropped it.
+    sync(app, monkeypatch, _two_hosts()[2:])
+    with app.app_context():
+        assert all(d.closed_seen_at for d in SpotlightDeletion.query.filter_by(aid=OLD_AID))
+
+    # The host is re-imaged under the same agent and comes back: it returns.
+    sync(app, monkeypatch, _two_hosts())
+    with app.app_context():
+        assert SpotlightHost.query.filter_by(aid=OLD_AID).first() is not None
+        assert SpotlightFinding.query.filter_by(aid=OLD_AID).count() == 2
+
+
+def test_host_delete_takes_closed_and_dismissed_findings_too(app, monkeypatch):
+    from app.models_spotlight import SpotlightFinding
+    sync(app, monkeypatch, _two_hosts())
+    with app.app_context():
+        ids = [f.id for f in SpotlightFinding.query.filter_by(aid=OLD_AID)]
+    c = app.test_client()
+    _login(c)
+    c.post("/ingest/triage", data={"finding_ids": ids[:1], "action": "dismiss",
+                                   "reason": "accepted"})
+    _delete_hosts_via_ui(app, [OLD_AID])
+    with app.app_context():
+        assert SpotlightFinding.query.filter_by(aid=OLD_AID).count() == 0
+
+
+def test_host_with_a_risk_keeps_its_evidence(app, monkeypatch):
+    from app.models_spotlight import SpotlightFinding, SpotlightHost
+    sync(app, monkeypatch, _two_hosts())
+    with app.app_context():
+        fid = SpotlightFinding.query.filter_by(aid=OLD_AID, cve_id=CVE).one().id
+    c = app.test_client()
+    _login(c)
+    c.post("/ingest/elevate", data={"finding_ids": [fid], "confirm_elevate": "1",
+                                    "likelihood": "4", "impact": "4"})
+    resp = _delete_hosts_via_ui(app, [OLD_AID])
+    assert b"kept because they have findings on a risk" in resp.data
+    with app.app_context():
+        assert SpotlightHost.query.filter_by(aid=OLD_AID).first() is not None
+        left = SpotlightFinding.query.filter_by(aid=OLD_AID).all()
+        assert [f.id for f in left] == [fid], "only the elevated finding stays"
+
+
+def test_viewers_cannot_delete_hosts(app, monkeypatch):
+    from app.models import User, db
+    from app.models_spotlight import SpotlightHost
+    sync(app, monkeypatch, _two_hosts())
+    with app.app_context():
+        v = User(username="viewer", email="v@example.org", name="Vee", role="viewer")
+        v.set_password(OPERATOR_PW)
+        db.session.add(v)
+        db.session.commit()
+    c = app.test_client()
+    _login(c, "viewer", OPERATOR_PW)
+    assert c.post("/ingest/hosts/delete", data={"aids": [OLD_AID]}).status_code == 403
+    assert "Delete host" not in c.get(f"/ingest/host/{OLD_AID}").get_data(as_text=True)
+    with app.app_context():
+        assert SpotlightHost.query.filter_by(aid=OLD_AID).first() is not None
+
+
+def test_host_page_delete_returns_to_the_host_list(app, monkeypatch):
+    sync(app, monkeypatch, _two_hosts())
+    c = app.test_client()
+    _login(c)
+    page = c.get(f"/ingest/host/{OLD_AID}").get_data(as_text=True)
+    assert "Delete host" in page and "last synced" in page
+    resp = c.post("/ingest/hosts/delete",
+                  data={"aids": [OLD_AID], "back": f"/ingest/host/{OLD_AID}?"})
+    assert resp.status_code == 302 and resp.headers["Location"].endswith("/ingest/")

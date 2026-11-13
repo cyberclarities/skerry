@@ -284,6 +284,23 @@ deletes those CVEs on those hosts and nowhere else. A host that turns up with
 a deleted CVE in a later sync arrives as New, because that host was never
 deleted. Up to 500 CVEs per action.
 
+**Delete hosts that are gone from CrowdStrike.** A system retired from
+Falcon can linger in the queue, because Spotlight keeps reporting a host's
+vulnerabilities for a while after the agent stops checking in. Set **Not seen
+in Falcon** to 30+ days (or whatever fits your retirement process) to list
+those hosts, read the **Last seen** column, check the ones that are truly
+gone, and press **Delete selected hosts**. One host at a time works from the
+host page with **Delete host**.
+
+This is not the CVE delete. It takes every finding on the host, closed and
+dismissed included, not just what the filters show. Each finding is
+remembered on the Deleted findings list, so the rule is the same: while
+Spotlight still reports the host's CVEs open, they stay out. Once a complete
+sync stops returning them, the marks are closed, and if the host ever comes
+back to Falcon under the same agent ID, it returns to the queue as New. A
+host with any finding on a risk keeps that finding and its host row; the
+rest of its findings go. Up to 500 hosts per action.
+
 ### 5.2 Upgrading an existing queue
 
 The first start after this version cleans the existing queue once:

@@ -9,6 +9,7 @@ Route map:
     /ingest/elevate          GET the pre-filled form, POST creates the risk
     /ingest/triage           bulk mark Triaged / Dismissed
     /ingest/delete           bulk delete as noise (remembered; see below)
+    /ingest/hosts/delete     bulk delete whole hosts no longer in CrowdStrike
     /ingest/deleted          what was deleted, by whom, and whether it can return
     /ingest/sync             manual pull (admin)
     /ingest/runs             sync history
@@ -18,7 +19,7 @@ triage are operator-or-above; running a sync and testing credentials are
 admin-only, because those touch an external system with a stored key.
 """
 
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from math import ceil
 
 from flask import (Blueprint, abort, flash, jsonify, redirect, render_template,
@@ -41,12 +42,14 @@ from app.spotlight import elevate as elevate_mod
 from app.spotlight.client import SpotlightError
 from app.spotlight.ingest import OPEN as OPEN_STATUSES
 from app.spotlight.ingest import client_from_config, run_sync, start_background_sync
-from app.spotlight.maintenance import delete_findings, restore_deletion
+from app.spotlight.maintenance import delete_findings, delete_hosts, restore_deletion
 
 ingest_bp = Blueprint("ingest", __name__, url_prefix="/ingest")
 
 MAX_SELECTION = 2000  # guardrail: one risk covering 2000 findings is a mistake
 ROWS_PER_PAGE = 100   # host, CVE, and deleted-findings lists
+MAX_HOST_DELETE = 500  # per action; past that, narrow the filter first
+STALE_OPTIONS = (0, 14, 30, 60, 90)  # "not seen in Falcon for N+ days"
 
 
 def _base_query(include_closed=False, include_handled=False):
@@ -89,7 +92,20 @@ def _filters(source=None):
         "internet": _flag("internet", src),
         "include_closed": _flag("include_closed", src),
         "include_handled": _flag("include_handled", src),
+        "stale": _int(src.get("stale")),
     }
+
+
+def _int(value):
+    try:
+        return max(int(value or 0), 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _naive_utc_now():
+    """The app stores naive UTC (see spotlight/client.py parse_ts)."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def _apply_filters(query, f):
@@ -117,6 +133,14 @@ def _apply_filters(query, f):
         # Matches the dashboard's "KEV past CISA due" (app/assurance.py).
         query = query.filter(SpotlightFinding.is_cisa_kev.is_(True),
                              SpotlightFinding.cisa_due_date < date.today())
+    if f.get("stale"):
+        # Falcon's own last check-in for the agent. A host retired from
+        # CrowdStrike stops checking in, so this is how it shows itself.
+        # Unknown last-seen is not shown to be stale, so it is left out.
+        cutoff = _naive_utc_now() - timedelta(days=f["stale"])
+        gone = db.session.query(SpotlightHost.aid).filter(
+            SpotlightHost.last_seen.isnot(None), SpotlightHost.last_seen < cutoff)
+        query = query.filter(SpotlightFinding.aid.in_(gone))
     if f["internet"]:
         exposed = db.session.query(SpotlightHost.aid).filter(
             func.lower(SpotlightHost.internet_exposure) == "yes"
@@ -138,7 +162,7 @@ def _product_types():
              .distinct()
              .order_by(SpotlightHost.product_type_desc)
              .all())
-    return {"product_types": [t[0] for t in types]}
+    return {"product_types": [t[0] for t in types], "stale_options": STALE_OPTIONS}
 
 
 # -- views --------------------------------------------------------------------
@@ -195,9 +219,12 @@ def index():
     # Host details for this page only.
     hosts = {h.aid: h for h in SpotlightHost.query.filter(
         SpotlightHost.aid.in_([r["aid"] for r in rows]))} if rows else {}
+    now = _naive_utc_now()
     for r in rows:
         host = hosts.get(r["aid"])
         r["host"] = host
+        r["last_seen"] = host.last_seen if host else None
+        r["last_seen_days"] = (now - host.last_seen).days if host and host.last_seen else None
         r["hostname"] = (host.hostname if host else None) or r["hostname"] or r["aid"]
         r["internet"] = host.internet_exposure if host else None
         r["criticality"] = host.asset_criticality if host else None
@@ -220,6 +247,51 @@ def index():
         last_run=_last_run(),
         states=INGEST_STATES,
     )
+
+
+@ingest_bp.route("/hosts/delete", methods=["POST"])
+@operator_required
+def hosts_delete():
+    """Bulk delete hosts that are no longer in CrowdStrike, with their findings.
+
+    The selection is a list of agent IDs, checked one by one on the host
+    view. Every finding on each host goes, whatever the filters on screen
+    said, because the host is what is being removed, not a slice of it.
+    Each finding is remembered exactly as the per-finding Delete does it, so
+    tonight's sync does not put a retired host back. Findings on a risk stay,
+    and so does their host row.
+    """
+    aids = [a.strip() for a in request.form.getlist("aids") if a.strip()]
+    reason = (request.form.get("reason") or "").strip()
+    back = _safe_next(request.form.get("back"), url_for("ingest.index"))
+    if not aids:
+        flash("No hosts selected.", "warning")
+        return redirect(back)
+    if len(set(aids)) > MAX_HOST_DELETE:
+        flash(f"Host delete is capped at {MAX_HOST_DELETE} hosts at a time. "
+              f"Narrow the filter and run it again.", "warning")
+        return redirect(back)
+
+    summary = delete_hosts(aids, current_user, reason or None)
+    db.session.commit()
+
+    hosts, kept = summary["hosts"], summary["kept"]
+    if hosts:
+        message = (f"{len(hosts)} host(s) deleted with {summary['findings']} finding(s). "
+                   f"If Spotlight still reports them, they stay out; if a host "
+                   f"comes back to Falcon after a sync has stopped seeing it, it "
+                   f"returns to the queue.")
+    else:
+        message = "No hosts deleted."
+    if kept:
+        shown = ", ".join(kept[:5]) + (f" and {len(kept) - 5} more" if len(kept) > 5 else "")
+        message += (f" {len(kept)} host(s) kept because they have findings on a risk "
+                    f"({shown}); their other findings were deleted.")
+    flash(message, "success" if hosts else "warning")
+    # A deleted host has no page to go back to.
+    if any(f"/ingest/host/{a}" in back for a in aids):
+        back = url_for("ingest.index")
+    return redirect(back)
 
 
 @ingest_bp.route("/findings")

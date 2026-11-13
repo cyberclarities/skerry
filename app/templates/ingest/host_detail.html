@@ -22,6 +22,17 @@
     {% if host.asset_criticality %}
       <span class="badge bg-dark">{{ host.asset_criticality }} criticality</span>
     {% endif %}
+    {% if current_user.is_operator %}
+    <form method="POST" action="{{ url_for('ingest.hosts_delete') }}" class="d-inline ms-2"
+          data-confirm="Delete {{ host.display_name }} and every finding on it, in any state? Use this when the system is no longer in CrowdStrike. It stays out while Spotlight still reports it, and returns only if the host comes back to Falcon later. Findings attached to a risk are left alone.">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="aids" value="{{ host.aid }}">
+      <input type="hidden" name="reason" value="No longer in CrowdStrike">
+      <input type="hidden" name="back" value="{{ url_for('ingest.index') }}">
+      <button type="submit" class="btn btn-sm btn-outline-danger">
+        <i class="bi bi-trash"></i> Delete host</button>
+    </form>
+    {% endif %}
   </div>
 </div>
 
@@ -32,7 +43,9 @@
       <div class="col-md-3"><span class="text-muted">Domain:</span> {{ host.machine_domain or '—' }}</div>
       <div class="col-md-3"><span class="text-muted">Site / OU:</span> {{ host.site_name or '—' }} / {{ host.ou or '—' }}</div>
       <div class="col-md-3"><span class="text-muted">Last seen:</span>
-        {{ host.last_seen.strftime('%Y-%m-%d') if host.last_seen else '—' }}</div>
+        {{ host.last_seen.strftime('%Y-%m-%d') if host.last_seen else '—' }}
+        <span class="text-muted" title="Last sync that returned a record for this host">
+          (last synced {{ host.last_synced_at.strftime('%Y-%m-%d') if host.last_synced_at else '—' }})</span></div>
     </div>
     {% if host.host_groups %}
     <div class="mt-1"><span class="text-muted">Falcon groups:</span> {{ host.host_groups }}</div>

@@ -3,6 +3,20 @@
 Each release, newest first. The version shown under the logo in the app is
 kept in `app/version.py`; see that file for how to release a new one.
 
+## Unreleased
+
+### Spotlight ingest
+- **Delete hosts that are gone from CrowdStrike.** The host view has a
+  checkbox on each row and a **Delete selected hosts** button, and each host
+  page has **Delete host**. Every finding on the host goes, in any state, and
+  each is remembered the same way a deleted finding is: it stays out while
+  Spotlight still reports it, and the host returns as New only if it comes
+  back to Falcon after a sync has stopped seeing it. Findings on a risk stay,
+  and so does their host. Up to 500 hosts at a time; operators and admins.
+- **Not seen in Falcon** filter (14, 30, 60, 90+ days) on every ingest view,
+  read from the agent's last check-in. The host view shows a **Last seen**
+  column, and the host page shows when a sync last returned the host.
+
 ## 1.8 (2026-11-09)
 
 ### Upgrade script

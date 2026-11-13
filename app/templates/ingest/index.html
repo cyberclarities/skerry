@@ -27,11 +27,43 @@
 {% if not rows %}
   <div class="alert alert-light border">No findings match these filters.</div>
 {% else %}
+<form method="POST" action="{{ url_for('ingest.hosts_delete') }}" id="host-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="back" value="{{ request.full_path }}">
+{% if current_user.is_operator %}
+<div class="card shadow-sm mb-3 border-danger-subtle">
+  <div class="card-body">
+    <div class="row g-2 align-items-end">
+      <div class="col-md-6">
+        <label class="form-label small text-muted mb-1">Reason (optional, kept on the Deleted list)</label>
+        <input type="text" name="reason" class="form-control form-control-sm"
+               value="No longer in CrowdStrike">
+      </div>
+      <div class="col-md-6 text-md-end">
+        <span class="small text-muted me-2" id="selected-count">0 selected</span>
+        <button type="submit" class="btn btn-sm btn-danger" id="delete-hosts" disabled
+                data-confirm="Delete the selected hosts and every finding on them, in any state? They stay out of the queue while Spotlight still reports them, and return only if the host comes back to Falcon later. Findings attached to a risk are left alone, along with their host.">
+          <i class="bi bi-trash"></i> Delete selected hosts
+        </button>
+      </div>
+    </div>
+    <p class="small text-muted mb-0 mt-2">
+      For systems that are gone from CrowdStrike. Set <strong>Not seen in Falcon</strong> above
+      to find hosts whose agent has stopped checking in, check them below, and delete.
+      Unlike the CVE delete, this removes every finding on the host, not just the ones on screen.
+    </p>
+  </div>
+</div>
+{% endif %}
 <div class="card shadow-sm">
   <div class="table-responsive">
     <table class="table table-sm table-hover mb-0 align-middle">
       <thead>
         <tr>
+          {% if current_user.is_operator %}
+          <th style="width:2rem"><input type="checkbox" id="check-all" class="form-check-input"
+                                        title="Select every host on this page"></th>
+          {% endif %}
           <th>Host</th>
           <th>Type</th>
           <th class="text-center">Findings</th>
@@ -41,12 +73,16 @@
           <th class="text-center">Max CVSS</th>
           <th class="text-center">Oldest</th>
           <th>Exposure</th>
+          <th class="text-center" title="Last time the agent checked in with CrowdStrike">Last seen</th>
           <th></th>
         </tr>
       </thead>
       <tbody>
       {% for r in rows %}
         <tr>
+          {% if current_user.is_operator %}
+          <td><input type="checkbox" name="aids" value="{{ r.aid }}" class="form-check-input row-check"></td>
+          {% endif %}
           <td>
             <a href="{{ url_for('ingest.host_detail', aid=r.aid) }}" class="fw-semibold text-decoration-none">
               {{ r.hostname }}</a>
@@ -70,6 +106,12 @@
               <span class="badge bg-danger">Internet-facing</span>
             {% else %}<span class="text-muted">{{ r.internet or '—' }}</span>{% endif %}
           </td>
+          <td class="text-center small" title="{{ r.last_seen.strftime('%Y-%m-%d %H:%M') ~ ' UTC' if r.last_seen else 'Not reported by Falcon' }}">
+            {% if r.last_seen_days is not none %}
+              <span class="{{ 'text-danger fw-semibold' if r.last_seen_days >= 30 }}">
+                {{ 'today' if r.last_seen_days == 0 else r.last_seen_days ~ 'd ago' }}</span>
+            {% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
           <td class="text-end">
             <a href="{{ url_for('ingest.host_detail', aid=r.aid) }}" class="btn btn-sm btn-outline-primary">
               Review</a>
@@ -80,6 +122,7 @@
     </table>
   </div>
 </div>
+</form>
 <p class="small text-muted mt-2">
   {{ total_hosts }} host(s), ordered by KEV count, then worst severity, then highest CVSS.
 </p>
@@ -94,4 +137,27 @@
 </nav>
 {% endif %}
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (function () {
+    var all = document.getElementById('check-all');
+    var count = document.getElementById('selected-count');
+    var button = document.getElementById('delete-hosts');
+    function refresh() {
+      var n = document.querySelectorAll('.row-check:checked').length;
+      if (count) { count.textContent = n + ' selected'; }
+      if (button) { button.disabled = n === 0; }
+    }
+    all?.addEventListener('change', function (e) {
+      document.querySelectorAll('.row-check').forEach(function (cb) { cb.checked = e.target.checked; });
+      refresh();
+    });
+    document.querySelectorAll('.row-check').forEach(function (cb) { cb.addEventListener('change', refresh); });
+    // The browser restores checkmarks on Back; match the button to them.
+    refresh();
+    window.addEventListener('pageshow', refresh);
+  })();
+</script>
 {% endblock %}

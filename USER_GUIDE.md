@@ -539,6 +539,8 @@ For each finding, or a selection of them:
 
 **Bulk delete by CVE.** One product often carries a dozen CVEs that one patch fixes. In the CVE view, group by **Product**, keep the CVE you will track, tick the rest, and press **Delete selected CVEs**. Only what your filters show is deleted. Up to 500 CVEs at a time.
 
+**Delete hosts that are gone from CrowdStrike.** In the host view, set **Not seen in Falcon** to 30+ days to list systems whose agent has stopped checking in. Check the **Last seen** column, tick the hosts that are truly retired, and press **Delete selected hosts**. For one system, open it and press **Delete host**. Every finding on the host goes, not just what your filters show. Findings on a risk stay, along with their host. If a deleted host comes back to Falcon later, it returns to the queue as New. Up to 500 hosts at a time.
+
 ### What the Next Sync Does
 
 - **Dismissed or triaged** findings keep their state. A sync never undoes a person's decision.
@@ -708,7 +710,7 @@ After a successful import, the application reconnects to the new database withou
 | Log reviews (trend log entries) on those risks | — | ✓ | ✓ |
 | Generate a Risk Action Request for those risks | — | ✓ | ✓ |
 | Set treatment to Accept, or status to Closed, on those risks | — | ✓ | ✓ |
-| Elevate, triage, dismiss, delete, or restore Spotlight findings | — | ✓ | ✓ |
+| Elevate, triage, dismiss, delete, or restore Spotlight findings and hosts | — | ✓ | ✓ |
 | Edit any risk | — | — | ✓ |
 | Delete risks | — | — | ✓ |
 | Sign off on risk acceptance | — | — | ✓ |
