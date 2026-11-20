@@ -5,6 +5,13 @@ kept in `app/version.py`; see that file for how to release a new one.
 
 ## Unreleased
 
+### Sign-in
+- **Skerry's cookies have their own names** (`skerry_session`,
+  `skerry_remember`) instead of Flask's default `session`. Browsers share
+  cookies across ports on the same hostname, so Skerry and CAIRN on one host
+  (`localhost:8443` and `localhost:7443`) signed each other out. Everyone signs
+  in once more after the upgrade.
+
 ### Spotlight ingest
 - **Delete hosts that are gone from CrowdStrike.** The host view has a
   checkbox on each row and a **Delete selected hosts** button, and each host

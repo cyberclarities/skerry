@@ -27,6 +27,12 @@ class Config:
     SESSION_COOKIE_SAMESITE = "Lax"
     REMEMBER_COOKIE_SECURE = SESSION_COOKIE_SECURE
     REMEMBER_COOKIE_HTTPONLY = True
+    # Cookie names unique to Skerry. Browsers scope cookies by hostname, not by
+    # port, so two Flask apps on one host (localhost:7443 and localhost:8443
+    # behind Stile) would otherwise share Flask's default "session" cookie, and
+    # signing in to one would sign you out of the other.
+    SESSION_COOKIE_NAME = "skerry_session"
+    REMEMBER_COOKIE_NAME = "skerry_remember"
     REMEMBER_COOKIE_SAMESITE = "Lax"
     REMEMBER_COOKIE_DURATION = timedelta(
         days=int(os.environ.get("REMEMBER_COOKIE_DAYS", 7))
