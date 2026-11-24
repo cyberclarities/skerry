@@ -34,8 +34,8 @@
 | **PackageVersion** | 1.8 |
 | **PackageSupplier** | Organization: CyberClarities |
 | **PackageHomePage** | internal |
-| **PackageLicenseDeclared** | MIT |
-| **PackageLicenseConcluded** | MIT |
+| **PackageLicenseDeclared** | PolyForm-Noncommercial-1.0.0 |
+| **PackageLicenseConcluded** | PolyForm-Noncommercial-1.0.0 |
 | **FilesAnalyzed** | true |
 | **PrimaryLanguage** | Python 3.12 |
 | **Runtime** | Gunicorn 26 / Flask 3.1 |
@@ -315,6 +315,7 @@ and are invisible to container image scanners. Track them separately.
 
 | 2026-11-04 to 2026-11-05 | Releases 1.5 through 1.7.4. No dependency change. |
 | 2026-11-09 | Release 1.8, from the 2026-11-06 dependency review. Authlib 1.9.5, gunicorn 26.2.0, dnspython 2.9.2, SQLAlchemy 2.0.57, Flask-Limiter 4.1.1, docxtpl 0.20.2, APScheduler 3.11.3, WTForms 3.3.2, Flask-WTF 1.3.0, requests 2.34.2, email-validator 2.3.0, python-dotenv 1.2.4. Eight packages left the image (rich, markdown-it-py, mdurl, Pygments, pytz, six, docxcompose, babel); joserfc, which Authlib needs, was missing and is added. Added `requirements.lock`; section 4 is now generated from it. Images pinned to `python:3.12-alpine3.24` and `caddy:2.11-alpine`; Alpine 3.21, recorded here before, is out of support. Bootstrap 5.3.8, Bootstrap Icons 1.13.2, Chart.js 4.6.1. Added `scripts/upgrade.sh`. The scan commands use the image name Compose gives a `skerry` folder. |
+| 2026-11-24 | Skerry's own license changed from MIT to PolyForm-Noncommercial-1.0.0, with commercial use under a separate paid license (`COMMERCIAL.md`). No dependency change. |
 ---
 
 *Regenerate after any change to `requirements.txt`, `requirements.lock`, the image tags,

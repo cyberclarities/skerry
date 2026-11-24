@@ -133,4 +133,10 @@ read [`SECURITY.md`](SECURITY.md) first and do not open a public issue.
 
 ## License
 
-MIT. See [`LICENSE`](LICENSE).
+Free for noncommercial use under the
+[PolyForm Noncommercial License 1.0.0](LICENSE). Charities, churches,
+schools, government, and personal use are covered at no cost. Commercial use,
+including consultants and MSPs serving paying clients, needs a paid license;
+see [`COMMERCIAL.md`](COMMERCIAL.md).
+
+Versions released before this change remain under the MIT License.
