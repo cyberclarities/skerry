@@ -499,7 +499,7 @@ When configured, the scheduler fires daily at 7:00 AM (container local time) and
 | Board escalation | All admin users by email | Board Reporting Flag is set on the risk AND residual score exceeds risk appetite threshold |
 | Review due | Risk Owner | Next review date is within 7 days or already past, based on review frequency and the latest of last reviewed and acceptance sign-off. Sent each day until the risk is reviewed. |
 
-**Recipient resolution:** The platform matches the Risk Owner or Action Owner field against the Full Name or email of an **active user**, ignoring case. It never mails an address that is not a user's, so an owner field cannot send risk details outside the user list. With no match, the notification is skipped and a warning is logged (`Cannot resolve notification recipient`). Nobody sees an error, so check the log. Risks that are Closed or Accepted get no notifications.
+**Recipient resolution:** The platform matches the Risk Owner or Action Owner field against the Full Name or email of an **active user**, ignoring case. It never mails an address that is not a user's, so an owner field cannot send risk details outside the user list. With no match, the notification is skipped and a warning is logged (`Cannot resolve notification recipient`). Nobody sees an error, so check the log. Closed risks get no notifications. Accepted risks get the review-due reminder, because the review is what keeps an acceptance from standing forever, but no overdue or board escalation notices.
 
 Configure SMTP in `.env`:
 

@@ -151,11 +151,19 @@ def run_daily_notifications(app):
         ]
         today = date.today()
 
-        risks = Risk.query.filter(Risk.status.notin_(["Closed", "Accepted"])).all()
+        # Every active risk, Accepted included. An accepted risk is still
+        # active (app/assurance.py), and its review is the one that keeps an
+        # acceptance from standing forever, so it must get the reminder the
+        # dashboard and the Reviews Due report already show.
+        risks = Risk.query.filter(Risk.status != "Closed").all()
         for risk in risks:
-            if risk.is_overdue:
+            accepted = risk.status == "Accepted"
+            if risk.is_overdue:  # never true for Accepted; see Risk.is_overdue
                 notify_overdue(risk, base_url)
-            if risk.board_reporting_flag and risk.exceeds_risk_appetite:
+            # Accepting a risk over appetite is the escalation's answer, so an
+            # Accepted risk does not escalate again every morning.
+            if (not accepted and risk.board_reporting_flag
+                    and risk.exceeds_risk_appetite):
                 notify_board_escalation(risk, admin_emails, base_url)
             if review_due(risk, today):
                 notify_review_due(risk, base_url)

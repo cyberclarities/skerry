@@ -274,6 +274,37 @@ def test_2_1_plain_text_email_is_not_html_escaped():
     assert "Subject:" not in body
 
 
+def test_accepted_risk_gets_review_due_email_but_no_escalation(app, monkeypatch):
+    """An accepted risk is still active. Its review reminder must go out, the
+    same as the dashboard and Reviews Due report show it; the board
+    escalation must not repeat once the risk has been accepted."""
+    import app.email_utils as eu
+    from app.models import User, db
+    with app.app_context():
+        owner = User(username="own", email="own@example.org", name="Owen Owner",
+                     role="operator", is_active=True)
+        owner.set_password(OPERATOR_PW)
+        db.session.add(owner)
+        db.session.commit()
+    _make_risk(app, status="Accepted", treatment="Accept", risk_owner="Owen Owner",
+               review_frequency="Quarterly", board_reporting_flag=True,
+               date_identified=date.today() - timedelta(days=200),
+               last_reviewed=date.today() - timedelta(days=100))
+    _make_risk(app, status="Closed", risk_owner="Owen Owner",
+               review_frequency="Monthly",
+               date_identified=date.today() - timedelta(days=200))
+
+    from app.models import Risk
+    with app.app_context():
+        assert Risk.query.filter_by(risk_id="SKR-001").one().exceeds_risk_appetite
+
+    sent = []
+    monkeypatch.setattr(eu, "_send", lambda to, subject, body: sent.append((to, subject)))
+    eu.run_daily_notifications(app)
+
+    assert sent == [(["own@example.org"], "[Skerry] Review Due: SKR-001")]
+
+
 # ── 2.2 ─────────────────────────────────────────────────────────────────────
 def test_2_2_excel_export_stores_formulas_as_text(app):
     import io
