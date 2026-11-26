@@ -3,7 +3,42 @@
 Each release, newest first. The version shown under the logo in the app is
 kept in `app/version.py`; see that file for how to release a new one.
 
-## Unreleased
+## 1.9 (2026-11-26)
+
+### Service Desk tickets
+- **Send a risk to SolarWinds Service Desk.** Each risk page has a Service
+  Desk card with a **Send to Service Desk** button, for any risk, new or
+  old. It emails the saved record to the SWSD dropbox address; the subject
+  becomes the incident title and the body its description. Admins, and
+  operators on risks they created or own.
+- **A second send has to be confirmed.** SWSD opens a new incident for every
+  email, so the card shows when the risk was sent and by whom, and a resend
+  asks first. The server checks too, not just the page.
+- **Every attempt is recorded**, sent or failed, on the risk and in its audit
+  log, with a field for the incident number SWSD assigns.
+- **Auto-send new risks**, off by default: RED only, RED and AMBER, or all.
+  Covers risks created by hand and from Spotlight. A failed send never
+  blocks the save; the risk is saved and the failure is shown.
+
+### Email Settings page
+- **Admin > Email Settings** chooses what Skerry sends: the Service Desk
+  address, the auto-send rule, which fields go in the ticket, and an on/off
+  switch for each daily notice (overdue, review due, board escalation).
+- **Sensitive fields are off by default.** Threat text, vulnerability
+  detail, remediation, asset, hosts, and CVEs only go out when switched on.
+  More people can read the service desk than the register.
+- **Send test** sends a sample risk, marked TEST, with the saved choices.
+- Every change is written to the application log with who made it. The mail
+  server and its password stay in `.env`.
+
+### Email notifications
+- **Accepted risks get the review-due reminder.** The daily job skipped
+  every Accepted risk, so the one review that keeps an acceptance from
+  standing forever never sent a reminder, though the dashboard and the
+  Reviews Due report showed it. Accepted risks still get no overdue or
+  board escalation notices.
+- **The mail server has 30 seconds to answer.** There was no limit, so a
+  dead server could hang a page as well as the nightly job.
 
 ### Sign-in
 - **Skerry's cookies have their own names** (`skerry_session`,
@@ -23,6 +58,12 @@ kept in `app/version.py`; see that file for how to release a new one.
 - **Not seen in Falcon** filter (14, 30, 60, 90+ days) on every ingest view,
   read from the agent's last check-in. The host view shows a **Last seen**
   column, and the host page shows when a sync last returned the host.
+
+### Upgrading
+- Rebuild: `scripts/upgrade.sh`. Two new tables are created on startup; no
+  settings change. Ticketing stays off until an admin turns it on under
+  Email Settings. To use it, set up a category dropbox in SolarWinds and
+  put `SMTP_FROM` on its allowed list; see ADMIN_GUIDE.md section 7.
 
 ## 1.8 (2026-11-09)
 

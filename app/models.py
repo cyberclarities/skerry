@@ -143,6 +143,9 @@ class Risk(db.Model):
     vulnerability_findings = db.relationship("VulnerabilityFinding", backref="risk", lazy="dynamic",
                                 cascade="all, delete-orphan",
                                 order_by="VulnerabilityFinding.date_found")
+    ticket_sends = db.relationship("TicketSend", backref="risk", lazy="dynamic",
+                                   passive_deletes="all",
+                                   order_by="TicketSend.sent_at.desc()")
 
     # ── Computed properties ──────────────────────────────────────────────────
     # The math lives in app/scoring.py; these only supply the inputs.
@@ -354,3 +357,54 @@ class RegisterSnapshot(db.Model):
 
     def __repr__(self):
         return f"<RegisterSnapshot {self.snapshot_date}>"
+
+
+class AppSetting(db.Model):
+    """One admin-editable setting, stored as text. Read through
+    app/app_settings.py, which owns the defaults; a missing row means the
+    default applies. Secrets never go here: the Settings page can download
+    this database, so SMTP credentials stay in .env.
+    """
+    __tablename__ = "app_settings"
+
+    key = db.Column(db.String(64), primary_key=True)
+    value = db.Column(db.Text)
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_by_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+
+    updated_by = db.relationship("User", foreign_keys=[updated_by_id])
+
+    def __repr__(self):
+        return f"<AppSetting {self.key}>"
+
+
+class TicketSend(db.Model):
+    """One attempt to send a risk to the service desk, sent or failed.
+
+    SolarWinds Service Desk opens a new incident for every email, so this
+    record is what tells a person a risk has already gone. The incident
+    number SWSD assigns is typed in afterwards, on the send that created it.
+    Rows survive the risk: delete_risk moves them to its tombstone key along
+    with the audit and trend rows (see risk_routes._retire_history).
+    """
+    __tablename__ = "ticket_sends"
+
+    id = db.Column(db.Integer, primary_key=True)
+    risk_id = db.Column(db.Integer, db.ForeignKey("risks.id"), nullable=False, index=True)
+    risk_ref = db.Column(db.String(20))          # readable ID, kept after a delete
+    sent_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    sent_by_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+    trigger = db.Column(db.String(20), nullable=False)   # manual|auto
+    recipient = db.Column(db.String(255))
+    ok = db.Column(db.Boolean, nullable=False, default=False)
+    error = db.Column(db.Text)
+
+    ticket_number = db.Column(db.String(50))
+    ticket_number_set_at = db.Column(db.DateTime)
+    ticket_number_set_by_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+
+    sent_by = db.relationship("User", foreign_keys=[sent_by_id])
+    ticket_number_set_by = db.relationship("User", foreign_keys=[ticket_number_set_by_id])
+
+    def __repr__(self):
+        return f"<TicketSend {self.risk_ref} {'ok' if self.ok else 'failed'}>"

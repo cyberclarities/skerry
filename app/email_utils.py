@@ -51,11 +51,28 @@ Log in to review: {{ base_url }}/risks/{{ risk.id }}
 """)
 
 
-def _send(to_addresses: list[str], subject: str, body: str):
+# How long to wait on the mail server. Without a limit a dead server hangs
+# the request that pressed a Send button, not just the nightly job.
+SMTP_TIMEOUT = 30
+
+
+def smtp_configured() -> bool:
+    return bool(current_app.config.get("SMTP_HOST"))
+
+
+def _send(to_addresses: list[str], subject: str, body: str) -> bool:
+    """Send, log the outcome, and return True when the server accepted it."""
+    return deliver(to_addresses, subject, body) is None
+
+
+def deliver(to_addresses: list[str], subject: str, body: str):
+    """Send one plain-text message. Returns None when the server accepted
+    it, or the reason it did not, so a page can tell the person who pressed
+    the button what went wrong."""
     cfg = current_app.config
     if not cfg.get("SMTP_HOST"):
         log.debug("SMTP not configured; skipping email to %s", to_addresses)
-        return
+        return "Email is not configured on this server (SMTP_HOST is blank)."
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
@@ -69,18 +86,21 @@ def _send(to_addresses: list[str], subject: str, body: str):
     server = None
     try:
         if cfg.get("SMTP_USE_TLS", True):
-            server = smtplib.SMTP(cfg["SMTP_HOST"], cfg["SMTP_PORT"])
+            server = smtplib.SMTP(cfg["SMTP_HOST"], cfg["SMTP_PORT"], timeout=SMTP_TIMEOUT)
             server.starttls(context=context)
         else:
-            server = smtplib.SMTP_SSL(cfg["SMTP_HOST"], cfg["SMTP_PORT"], context=context)
+            server = smtplib.SMTP_SSL(cfg["SMTP_HOST"], cfg["SMTP_PORT"],
+                                      context=context, timeout=SMTP_TIMEOUT)
 
         if cfg.get("SMTP_USER"):
             server.login(cfg["SMTP_USER"], cfg["SMTP_PASSWORD"])
 
         server.sendmail(cfg["SMTP_FROM"], to_addresses, msg.as_string())
         log.info("Email sent to %s: %s", to_addresses, subject)
+        return None
     except Exception as exc:
         log.error("Failed to send email to %s: %s", to_addresses, exc)
+        return f"The mail server refused or could not be reached: {exc}"
     finally:
         if server is not None:
             try:
@@ -143,7 +163,13 @@ def run_daily_notifications(app):
     """Called by the scheduler once per day."""
     with app.app_context():
         from datetime import date
+        from app import app_settings
         from app.models import Risk, User
+
+        # Each notice can be switched off on the Email Settings page.
+        send_overdue = app_settings.get_bool(app_settings.NOTICE_OVERDUE)
+        send_review = app_settings.get_bool(app_settings.NOTICE_REVIEW_DUE)
+        send_escalation = app_settings.get_bool(app_settings.NOTICE_ESCALATION)
 
         base_url = app.config.get("BASE_URL", "http://localhost:5000")
         admin_emails = [
@@ -158,12 +184,12 @@ def run_daily_notifications(app):
         risks = Risk.query.filter(Risk.status != "Closed").all()
         for risk in risks:
             accepted = risk.status == "Accepted"
-            if risk.is_overdue:  # never true for Accepted; see Risk.is_overdue
+            if send_overdue and risk.is_overdue:  # never true for Accepted
                 notify_overdue(risk, base_url)
             # Accepting a risk over appetite is the escalation's answer, so an
             # Accepted risk does not escalate again every morning.
-            if (not accepted and risk.board_reporting_flag
+            if (send_escalation and not accepted and risk.board_reporting_flag
                     and risk.exceeds_risk_appetite):
                 notify_board_escalation(risk, admin_emails, base_url)
-            if review_due(risk, today):
+            if send_review and review_due(risk, today):
                 notify_review_due(risk, base_url)

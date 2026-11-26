@@ -1,6 +1,6 @@
 # Skerry User Guide
 
-**Version:** 1.8  
+**Version:** 1.9  
 **Platform:** Skerry, at the address your administrator gives you  
 **Audience:** Everyone with an account: Viewer, Operator, and Admin
 
@@ -219,6 +219,14 @@ A history of every time the residual score was recorded: automatically on each s
 ### Audit Log
 
 A field-level change history: every edit, what field changed, what the old value was, what the new value is, and who made the change. You cannot edit or delete audit log entries. They are the record of what happened and when.
+
+### Service Desk
+
+Shown when your administrator has turned on Service Desk tickets. The card lists each time the risk was sent to SolarWinds Service Desk, by whom, and whether it went, along with the incident number once someone records it.
+
+If you can edit the risk, the card has a **Send to Service Desk** button. It sends the saved record, so save any edits first. The service desk opens a new incident for every email, so a risk that has already gone shows **Send again** and asks before it sends. When the incident number arrives, type it in the box under the send and click **Save**.
+
+Which fields go in the ticket is set by your administrator. Threat text, hosts, and CVEs are left out unless they choose otherwise, because more people can read the service desk than the risk register. Closing the incident does not close the risk; that still happens in Skerry.
 
 ---
 

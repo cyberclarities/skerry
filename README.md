@@ -25,7 +25,9 @@ and role-based access underneath it — not a platform, and not trying to be one
 - **Exports** — formatted Excel workbook, and a per-risk Risk Action Request
   (.docx) asking the CIO and CISO to mandate a course of action
 - **Email notifications** — daily overdue, review-due, and board escalation
-  notices (optional; off unless SMTP is configured)
+  notices, each switchable (optional; off unless SMTP is configured)
+- **Service Desk tickets** — send a risk to SolarWinds Service Desk by email,
+  by hand or automatically for new risks, with a record of every send
 - **Access control** — viewer, operator, and admin roles, with local accounts or
   Azure AD / OIDC single sign-on and group-to-role mapping
 

@@ -612,6 +612,11 @@ def elevate():
         if skipped:
             message += f" {len(skipped)} already-elevated finding(s) were left alone."
         flash(message, "success")
+        from app import ticketing
+        send = ticketing.auto_send_new(risk, current_user)
+        if send is not None:
+            db.session.commit()
+            ticketing.flash_auto_send(send)
         return redirect(url_for("risks.detail", risk_pk=risk.id))
 
     eligible = [f for f in findings if not f.elevation_id]

@@ -5,7 +5,7 @@ import tempfile
 from datetime import datetime, timezone
 
 from flask import (Blueprint, render_template, redirect, url_for,
-                   request, flash, send_file, current_app)
+                   request, flash, send_file, current_app, abort)
 from flask_login import current_user
 from app.models import db, LookupItem
 from app.decorators import admin_required
@@ -276,3 +276,79 @@ def reorder_item(item_id):
         )
         db.session.commit()
     return _back(item.category)
+
+
+# ── Email Settings ───────────────────────────────────────────────────────
+@settings_bp.route("/email", methods=["GET", "POST"])
+@admin_required
+def email_settings():
+    """What Skerry sends by email: the Service Desk ticket and the daily
+    notices. The mail server itself stays in .env; see app/app_settings.py
+    for why."""
+    from app import app_settings as s
+    from app import ticketing
+    from app.email_utils import smtp_configured
+
+    if request.method == "POST":
+        form = request.form
+        enabled = form.get("ticket_enabled") == "1"
+        address = (form.get("ticket_address") or "").strip()
+        rule = form.get("ticket_auto_send") or "off"
+        fields = [f for f in form.getlist("ticket_fields") if f in s.TICKET_OPTIONAL_FIELDS]
+
+        if rule not in s.AUTO_SEND_RULES:
+            abort(400)
+        if address:
+            from email_validator import EmailNotValidError, validate_email
+            try:
+                address = validate_email(address, check_deliverability=False).normalized
+            except EmailNotValidError as exc:
+                flash(f"The Service Desk address is not valid: {exc}", "danger")
+                return redirect(url_for("settings.email_settings"))
+        if enabled and not address:
+            flash("Add the Service Desk address before switching ticketing on.", "danger")
+            return redirect(url_for("settings.email_settings"))
+
+        values = {
+            s.TICKET_ENABLED: "1" if enabled else "0",
+            s.TICKET_ADDRESS: address,
+            s.TICKET_AUTO_SEND: rule,
+            s.TICKET_FIELDS: ",".join(f for f in s.TICKET_OPTIONAL_FIELDS if f in fields),
+        }
+        for key in s.NOTICES:
+            values[key] = "1" if form.get(key) == "1" else "0"
+
+        changed = s.set_many(values, current_user)
+        db.session.commit()
+        flash("Email settings saved." if changed else "No changes to save.",
+              "success" if changed else "info")
+        return redirect(url_for("settings.email_settings"))
+
+    when, who = s.last_changed()
+    return render_template(
+        "settings/email.html",
+        ticket=ticketing.status(),
+        auto_send=s.get(s.TICKET_AUTO_SEND),
+        auto_rules=s.AUTO_SEND_RULES,
+        fields_on=s.ticket_fields(),
+        optional_fields=s.TICKET_OPTIONAL_FIELDS,
+        notices={k: (label, s.get_bool(k)) for k, label in s.NOTICES.items()},
+        smtp=smtp_configured(),
+        smtp_from=current_app.config.get("SMTP_FROM", ""),
+        last_when=when,
+        last_who=who,
+    )
+
+
+@settings_bp.route("/email/test", methods=["POST"])
+@admin_required
+def email_test():
+    """Send a sample risk, marked TEST, with the saved choices."""
+    from app import ticketing
+    error = ticketing.send_test(current_user)
+    if error:
+        flash(f"The test did not go: {error}", "danger")
+    else:
+        flash("Test sent. Check that the incident arrived in the Service Desk "
+              "and that the fields read correctly, then close it.", "success")
+    return redirect(url_for("settings.email_settings"))

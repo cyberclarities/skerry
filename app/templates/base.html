@@ -221,8 +221,11 @@
       <a href="{{ url_for('users.manage') }}" class="{{ 'active' if request.blueprint == 'users' }}">
         <i class="bi bi-people"></i> User Management
       </a>
-      <a href="{{ url_for('settings.manage') }}" class="{{ 'active' if request.blueprint == 'settings' }}">
+      <a href="{{ url_for('settings.manage') }}" class="{{ 'active' if request.blueprint == 'settings' and request.endpoint not in ('settings.email_settings',) }}">
         <i class="bi bi-sliders"></i> Settings
+      </a>
+      <a href="{{ url_for('settings.email_settings') }}" class="{{ 'active' if request.endpoint == 'settings.email_settings' }}">
+        <i class="bi bi-envelope"></i> Email Settings
       </a>
       <a href="{{ url_for('ingest.runs') }}" class="{{ 'active' if request.endpoint == 'ingest.runs' }}">
         <i class="bi bi-arrow-repeat"></i> Spotlight Sync

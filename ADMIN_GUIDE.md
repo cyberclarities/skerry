@@ -1,6 +1,6 @@
 # Skerry Administrator Guide
 
-**Version:** 1.8  
+**Version:** 1.9  
 **Platform:** Flask 3.1 · Gunicorn 26 · Caddy 2.11 · SQLite · Docker Compose  
 **Audience:** IT administrators responsible for deployment, maintenance, and user access
 
@@ -133,6 +133,8 @@ skerry/
 │   ├── seed.py             NIST CSF 2.0 data and default lookup values
 │   ├── scoring.py          Risk scoring helpers
 │   ├── email_utils.py      SMTP notification logic
+│   ├── ticketing.py        Service Desk ticket email
+│   ├── app_settings.py     Settings kept in the database (Email Settings page)
 │   ├── decorators.py       Role enforcement decorators
 │   └── version.py          The version shown under the logo
 ├── data/                   Database volume mount point (start empty)
@@ -517,6 +519,44 @@ Verify notifications are working after 7:00 AM:
 ```bash
 docker compose logs web | grep -i "email\|notif\|smtp"
 ```
+
+Each notice can be switched off under **Admin > Email Settings**. All three are on until someone changes them.
+
+The mail server gets 30 seconds to answer before a send is given up.
+
+### 7.1 Email Settings
+
+**Admin > Email Settings** holds what Skerry sends. The SMTP server and password stay in `.env`: this page's settings live in the database, and the database can be downloaded from the Settings page.
+
+- **Send risks to the Service Desk.** On or off. Off by default. Cannot be switched on without an address.
+- **Service Desk address.** Where tickets go. See 7.2.
+- **Send new risks automatically.** Off (default), RED only, RED and AMBER, or every new risk. Covers risks created by hand and from Spotlight.
+- **What goes in the ticket.** Always included: risk ID, rating, residual score against appetite, status, action owner, risk owner, due date, source, who logged it, and a link. Category, treatment, and NIST CSF mapping are on by default. Asset/system, threat description, vulnerability detail, remediation action, affected hosts, and CVEs are marked sensitive and off by default. The subject uses the first sentence of the threat only when the threat field is on; otherwise it reads "<Category> risk logged in Skerry".
+- **Daily notices.** On/off for each.
+- **Send test.** Sends a sample risk marked `[TEST]` to the address, with the saved choices. Ticketing does not need to be on for the test, so you can check the address before turning it on.
+
+Every change is written to the application log with the admin's name and the old and new values:
+
+```bash
+docker compose logs web | grep "AUDIT setting"
+```
+
+### 7.2 SolarWinds Service Desk
+
+SolarWinds Service Desk (SWSD) opens an incident from any email sent to its dropbox address. The subject becomes the incident title and the body its description. Email cannot set priority, assignee, or due date, and SWSD does not match a resend to an existing incident.
+
+**Set up on the SWSD side:**
+
+1. **Create a category dropbox.** Setup > Service Desk > Categories, pick or create a category such as "Security > Risk Register", and create its dropbox email. Set the category's default assignee and tags. Use that address in Email Settings, so incidents land in the right queue.
+2. **Allow Skerry's sender.** If SWSD's Email Settings use an allowed list, add the `SMTP_FROM` address. Otherwise nothing arrives and nothing tells you why.
+3. **Use a mailbox someone watches for `SMTP_FROM`.** The sender becomes the incident's requester, so SWSD sends its "incident created" notice, with the incident number, back to that address.
+4. **Priority.** The subject carries the rating, as `SKR-042 [RED] New risk: ...`. Whether a word in the subject can set priority in SWSD is an SWSD admin question.
+
+**On the risk page,** admins and operators who can edit the risk see a Service Desk card. **Send to Service Desk** sends the saved record, not unsaved edits on the form. A risk already sent shows **Send again**, which asks first, because it opens a second incident; the server refuses a resend that was not confirmed. Each attempt, sent or failed, is listed on the card and in the risk's audit log (`ticket_sent` or `ticket_failed`), with a box for the SWSD incident number. Viewers see the card and the incident numbers, not the button.
+
+**Auto-send** happens after the risk is saved. If the mail server fails, the risk is still saved, the failure is recorded on the card, and the person who saved it sees a warning.
+
+**Deleting a risk** keeps its send history alongside its audit and trend history, under the same deleted-risk key, so the next risk created never inherits it.
 
 ---
 

@@ -5,7 +5,8 @@ from flask import (Blueprint, render_template, redirect, url_for,
 from flask_login import login_required, current_user
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
-from app.models import db, AuditLog, Risk, TrendLog, VulnerabilityFinding, NISTCSFReference, LookupItem
+from app.models import (db, AuditLog, Risk, TrendLog, TicketSend, VulnerabilityFinding,
+                        NISTCSFReference, LookupItem)
 from app.decorators import admin_required, operator_required, log_audit
 from app.routes.auth_routes import _safe_next
 from app.scoring import LIKELIHOOD_LABELS, IMPACT_LABELS, CONTROL_EFFECTIVENESS_LABELS
@@ -299,9 +300,13 @@ def detail(risk_pk):
     audit_entries = risk.audit_log.limit(50).all()
     trend_entries = risk.trend_entries.all()
     vulnerability_findings = risk.vulnerability_findings.all()
+    from app import ticketing
     return render_template(
         "risks/detail.html",
         risk=risk,
+        can_edit=_can_edit(risk),
+        ticket=ticketing.status(),
+        ticket_sends=risk.ticket_sends.limit(20).all(),
         audit_entries=audit_entries,
         trend_entries=trend_entries,
         vulnerability_findings=vulnerability_findings,
@@ -336,6 +341,7 @@ def new_risk():
         _auto_trend_entry(risk)
         db.session.commit()
         flash(f"Risk {risk.risk_id} created.", "success")
+        _auto_send(risk)
         return redirect(url_for("risks.detail", risk_pk=risk.id))
 
     ctx = _form_context()
@@ -364,6 +370,80 @@ def edit_risk(risk_pk):
     ctx = _form_context()
     ctx["risk"] = risk
     return render_template("risks/form.html", **ctx)
+
+
+def _auto_send(risk):
+    """Send a just-saved risk to the Service Desk when the auto-send rule
+    covers it. Runs after the risk is committed, so a mail failure can
+    never undo the save."""
+    from app import ticketing
+    send = ticketing.auto_send_new(risk, current_user)
+    if send is not None:
+        db.session.commit()
+        ticketing.flash_auto_send(send)
+
+
+# ── Service Desk ─────────────────────────────────────────────────────────
+TICKET_NUMBER_MAX = 50
+
+
+@risks_bp.route("/<int:risk_pk>/ticket/send", methods=["POST"])
+@operator_required
+def send_ticket(risk_pk):
+    """Send the saved risk to the Service Desk. SWSD opens a new incident
+    for every email, so a second send must be confirmed. The check is here,
+    not only in the page, so a replayed form cannot open a duplicate."""
+    from app import ticketing
+    risk = db.get_or_404(Risk, risk_pk)
+    _require_edit_rights(risk)
+    back = redirect(url_for("risks.detail", risk_pk=risk.id) + "#service-desk")
+
+    st = ticketing.status()
+    if not st["enabled"]:
+        abort(404)
+    if st["reason"]:
+        flash(st["reason"], "danger")
+        return back
+    if ticketing.previous_sends(risk) and request.form.get("confirm_resend") != "1":
+        flash(f"{risk.risk_id} has already been sent. Confirm the resend to "
+              "open a second incident.", "warning")
+        return back
+
+    send = ticketing.send_risk(risk, current_user, trigger="manual")
+    db.session.commit()
+    if send.ok:
+        flash(f"{risk.risk_id} sent to the Service Desk at {send.recipient}. "
+              "Add the incident number here once it arrives.", "success")
+    else:
+        flash(f"The send failed: {send.error}", "danger")
+    return back
+
+
+@risks_bp.route("/<int:risk_pk>/ticket/<int:send_pk>/number", methods=["POST"])
+@operator_required
+def set_ticket_number(risk_pk, send_pk):
+    """Record the incident number SWSD gave a send. Blank clears it."""
+    from datetime import datetime, timezone
+    risk = db.get_or_404(Risk, risk_pk)
+    _require_edit_rights(risk)
+    send = db.get_or_404(TicketSend, send_pk)
+    if send.risk_id != risk.id:
+        abort(404)
+
+    number = " ".join((request.form.get("ticket_number") or "").split())
+    if len(number) > TICKET_NUMBER_MAX:
+        flash(f"An incident number is at most {TICKET_NUMBER_MAX} characters.", "danger")
+        return redirect(url_for("risks.detail", risk_pk=risk.id) + "#service-desk")
+
+    old = send.ticket_number
+    if (old or "") != number:
+        send.ticket_number = number or None
+        send.ticket_number_set_at = datetime.now(timezone.utc)
+        send.ticket_number_set_by_id = current_user.id
+        log_audit(risk, current_user, "updated", {"service_desk_incident": (old, number or None)})
+        db.session.commit()
+        flash("Incident number saved." if number else "Incident number cleared.", "success")
+    return redirect(url_for("risks.detail", risk_pk=risk.id) + "#service-desk")
 
 
 @risks_bp.route("/<int:risk_pk>/delete", methods=["POST"])
@@ -662,7 +742,7 @@ def _retire_history(risk: Risk):
     rows on the old id would hand them to the next risk created. Instead:
 
     1. Write a "deleted" audit entry carrying the readable risk_id.
-    2. Move every audit and trend row for the risk to the negative of that
+    2. Move every audit, trend and service desk send row for the risk to the negative of that
        entry's own id. Entry ids are never reused, so the key is unique to
        this deletion. To read the trail later:
            SELECT * FROM audit_log WHERE risk_id = -<id of the deleted entry>
@@ -681,7 +761,7 @@ def _retire_history(risk: Risk):
     db.session.flush()
     tombstone = -entry.id
 
-    for model in (AuditLog, TrendLog):
+    for model in (AuditLog, TrendLog, TicketSend):
         model.query.filter_by(risk_id=risk.id).update(
             {"risk_id": tombstone}, synchronize_session=False)
     vuln_ids = [v.id for v in risk.vulnerability_findings]

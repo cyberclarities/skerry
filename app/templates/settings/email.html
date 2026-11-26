@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}Email Settings — Skerry{% endblock %}
+{% block breadcrumb %}Admin &rsaquo; Email Settings{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h5 class="fw-bold mb-0">Email Settings</h5>
+  {% if last_when %}
+  <span class="text-muted small">Last changed {{ last_when.strftime('%Y-%m-%d %H:%M') }}{% if last_who %} by {{ last_who.name }}{% endif %}</span>
+  {% endif %}
+</div>
+
+<p class="text-muted small mb-3">
+  What Skerry sends by email. The mail server and its password are set in <code>.env</code>,
+  not here: this page's settings live in the database, and the database can be downloaded.
+</p>
+
+{% if smtp %}
+<div class="alert alert-light border small py-2">
+  <i class="bi bi-envelope-check text-success"></i>
+  Email is configured. Messages come from <strong>{{ smtp_from }}</strong>.
+  Use a shared mailbox someone watches: the Service Desk sends its "incident created"
+  notice, with the incident number, back to this address.
+</div>
+{% else %}
+<div class="alert alert-warning small py-2">
+  <i class="bi bi-exclamation-triangle"></i>
+  Email is not configured on this server, so nothing on this page sends yet.
+  Set <code>SMTP_HOST</code> and the other SMTP settings in <code>.env</code> and restart. See ADMIN_GUIDE.md section 7.
+</div>
+{% endif %}
+
+<form method="POST" action="{{ url_for('settings.email_settings') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-header py-2 small fw-semibold text-uppercase text-muted">Service Desk tickets</div>
+    <div class="card-body small">
+      <div class="form-check form-switch mb-3">
+        <input class="form-check-input" type="checkbox" role="switch" id="ticket_enabled"
+               name="ticket_enabled" value="1" {{ 'checked' if ticket.enabled }}>
+        <label class="form-check-label fw-semibold" for="ticket_enabled">
+          Send risks to the Service Desk
+        </label>
+        <div class="text-muted">Adds a Service Desk card with a Send button to each risk page.</div>
+      </div>
+
+      <div class="mb-3">
+        <label for="ticket_address" class="form-label fw-semibold">Service Desk address</label>
+        <input type="email" class="form-control form-control-sm" id="ticket_address" name="ticket_address"
+               value="{{ ticket.address }}" placeholder="risk-register@yourco.samanage.com" style="max-width:28rem;">
+        <div class="text-muted mt-1">
+          Use a category dropbox address from SolarWinds (Setup &rsaquo; Service Desk &rsaquo; Categories),
+          so the incident lands in the right category with its default assignee.
+          The email's subject becomes the incident title and the body its description.
+          If SolarWinds uses an allowed list, <strong>{{ smtp_from or "the sending address" }}</strong> must be on it.
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label for="ticket_auto_send" class="form-label fw-semibold">Send new risks automatically</label>
+        <select class="form-select form-select-sm" id="ticket_auto_send" name="ticket_auto_send" style="max-width:28rem;">
+          {% for value, label in auto_rules.items() %}
+          <option value="{{ value }}" {{ 'selected' if value == auto_send }}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <div class="text-muted mt-1">
+          Covers risks created by hand and from Spotlight. Existing risks are sent with the button on the risk page.
+        </div>
+      </div>
+
+      <div class="mb-1 fw-semibold">What goes in the ticket</div>
+      <div class="text-muted mb-2">
+        Always included: risk ID, rating, residual score against appetite, status, action owner,
+        risk owner, due date, source, who logged it, and a link back to Skerry.
+      </div>
+      <div class="row">
+        {% for key, (label, sensitive) in optional_fields.items() %}
+        <div class="col-md-6">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="ticket_fields" value="{{ key }}"
+                   id="field-{{ key }}" {{ 'checked' if key in fields_on }}>
+            <label class="form-check-label" for="field-{{ key }}">
+              {{ label }}
+              {% if sensitive %}<span class="badge bg-warning text-dark ms-1">Sensitive</span>{% endif %}
+            </label>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="text-muted mt-2">
+        More people can read the Service Desk than the risk register. Fields marked sensitive
+        say what is exposed and where; together they are a map for an attacker. They are off unless you switch them on.
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-header py-2 small fw-semibold text-uppercase text-muted">Daily notices</div>
+    <div class="card-body small">
+      <div class="text-muted mb-2">Sent at 7:00 AM, container time, when email is configured.</div>
+      {% for key, (label, on) in notices.items() %}
+      <div class="form-check form-switch">
+        <input class="form-check-input" type="checkbox" role="switch" name="{{ key }}" value="1"
+               id="{{ key }}" {{ 'checked' if on }}>
+        <label class="form-check-label" for="{{ key }}">{{ label }}</label>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-check-lg"></i> Save</button>
+</form>
+
+<hr>
+
+<form method="POST" action="{{ url_for('settings.email_test') }}" class="d-flex align-items-center gap-2">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <button type="submit" class="btn btn-outline-secondary btn-sm" {{ 'disabled' if ticket.reason }}>
+    <i class="bi bi-send"></i> Send test to the Service Desk
+  </button>
+  <span class="text-muted small">
+    {% if ticket.reason %}{{ ticket.reason }}{% else %}Sends a sample risk marked TEST, using the saved choices above. Save first.{% endif %}
+  </span>
+</form>
+{% endblock %}

@@ -239,7 +239,8 @@ def test_2_1_smtp_verifies_the_server_certificate(app, monkeypatch):
     seen = {}
 
     class FakeSMTP:
-        def __init__(self, host, port):
+        def __init__(self, host, port, timeout=None):
+            seen["timeout"] = timeout
             seen["connected"] = True
 
         def starttls(self, context=None):
@@ -259,6 +260,7 @@ def test_2_1_smtp_verifies_the_server_certificate(app, monkeypatch):
     ctx = seen["context"]
     assert ctx is not None and ctx.verify_mode == ssl.CERT_REQUIRED and ctx.check_hostname
     assert seen.get("quit"), "connection must be closed even when login fails"
+    assert seen["timeout"], "a dead mail server must not hang the request"
 
 
 def test_2_1_plain_text_email_is_not_html_escaped():
